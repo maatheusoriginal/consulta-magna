@@ -7,7 +7,7 @@ import { Aviso } from "@/components/Aviso";
 import { SelectionCard } from "@/components/SelectionCard";
 import { VeiculoResumo } from "@/components/VeiculoResumo";
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, formatPercentual } from "@/lib/format";
 import { PRICING_CONFIG } from "@/lib/pricing";
 import { useWizard } from "@/lib/wizard";
 
@@ -82,7 +82,7 @@ export function StepParticipacao() {
                 {opcao.nome}
                 {opcao.percentual !== null ? (
                   <span className="ml-1.5 text-sm font-semibold text-text-secondary">
-                    ({Math.round(opcao.percentual * 100)}% FIPE)
+                    ({formatPercentual(opcao.percentual)} FIPE)
                   </span>
                 ) : null}
               </p>
@@ -129,9 +129,11 @@ export function StepParticipacao() {
       <Aviso titulo="Condições claras e transparentes">
         <p>
           <strong className="font-semibold text-text-primary">
-            Taxa de adesão: {formatBRL(preco.taxaAdesao)}.
+            Taxa de adesão: {formatBRL(participacao.taxaAdesao)}.
           </strong>{" "}
           Valor único de filiação e ativação da proteção — não se confunde com a participação.
+          Corresponde à mensalidade escolhida, com mínimo de{" "}
+          {formatBRL(preco.taxaAdesaoMinima)}.
         </p>
         <p className="mt-2">
           <strong className="font-semibold text-text-primary">Participação:</strong> paga somente
@@ -148,7 +150,7 @@ export function StepParticipacao() {
             <p className="truncate text-xs text-text-secondary">
               {planoSelecionado.nome}
               {participacao.percentual !== null
-                ? ` · ${Math.round(participacao.percentual * 100)}% FIPE`
+                ? ` · ${formatPercentual(participacao.percentual)} FIPE`
                 : " · Participação zero"}
             </p>
             <p className="flex items-baseline gap-1">

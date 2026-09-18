@@ -12,7 +12,7 @@ import {
 
 import { gerarCodigoSimulacao } from "./cotacao";
 import type { CotacaoSnapshot } from "./leads/types";
-import { getPlano, PLANOS } from "./planos";
+import { getPlano, planosDisponiveis } from "./planos";
 import { pricingProvider } from "./pricing";
 import type {
   ParticipacaoPrecificada,
@@ -22,6 +22,7 @@ import type {
 import { recomendarPlano, type Recomendacao } from "./recomendacao";
 import {
   categoriaDoTipo,
+  exigeUsoParticular,
   type FipeVeiculo,
   type Lead,
   type ParticipacaoId,
@@ -88,6 +89,10 @@ interface ContextoWizard extends EstadoWizard {
   perfilCompleto: PerfilRespostas | null;
   /** Plano sugerido pelo questionário (independe da escolha do usuário). */
   recomendado: Recomendacao | null;
+  /** Planos comercializados para a categoria do veículo consultado. */
+  planosOfertados: Plano[];
+  /** `true` quando a categoria exige uso particular (moto não roda em aplicativo). */
+  finalidadeFixa: boolean;
   /** Plano efetivamente escolhido — cai para o recomendado enquanto não houver escolha. */
   planoSelecionado: Plano | null;
   /** Resultado do PricingProvider para o plano selecionado. */
@@ -182,32 +187,49 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const valor = useMemo<ContextoWizard>(() => {
-    const perfil = estado.perfil;
+    const veiculo = estado.veiculo;
+    const categoria = veiculo ? categoriaDoTipo(veiculo.tipo) : null;
+
+    // Moto não roda em aplicativo/táxi: a finalidade é sempre particular.
+    const finalidadeFixa = veiculo ? exigeUsoParticular(veiculo.tipo) : false;
+    const perfil: Partial<PerfilRespostas> = finalidadeFixa
+      ? { ...estado.perfil, finalidade: "particular" }
+      : estado.perfil;
     const completo = perfilCompleto(perfil);
 
-    // O plano recomendado sai apenas do questionário: a finalidade (particular
-    // ou aplicativo/táxi) não entra nesta decisão.
-    const recomendado = completo
-      ? recomendarPlano({
-          prioridade: perfil.prioridade,
-          viagens: perfil.viagens,
-          carroReserva: perfil.carroReserva,
-          terceiros: perfil.terceiros,
-          vidros: perfil.vidros,
-        })
-      : null;
+    const idsOfertados = categoria ? pricingProvider.getAvailablePlanIds(categoria) : [];
+    const ofertados = planosDisponiveis(idsOfertados);
 
-    const planoSelecionado = estado.planoId
-      ? getPlano(estado.planoId)
+    // O plano recomendado sai apenas do questionário — a finalidade (particular
+    // ou aplicativo/táxi) não entra nesta decisão — e fica restrito aos planos
+    // efetivamente oferecidos para a categoria do veículo.
+    const recomendado =
+      completo && idsOfertados.length > 0
+        ? recomendarPlano(
+            {
+              prioridade: perfil.prioridade,
+              viagens: perfil.viagens,
+              carroReserva: perfil.carroReserva,
+              terceiros: perfil.terceiros,
+              vidros: perfil.vidros,
+            },
+            idsOfertados,
+          )
+        : null;
+
+    // Uma escolha anterior pode não existir na categoria atual (troca de veículo).
+    const planoEscolhidoValido =
+      estado.planoId && idsOfertados.includes(estado.planoId) ? estado.planoId : null;
+    const planoSelecionado = planoEscolhidoValido
+      ? getPlano(planoEscolhidoValido)
       : (recomendado?.plano ?? null);
 
-    const veiculo = estado.veiculo;
     const usoComercial = perfil.finalidade === "aplicativo";
 
     const precificar = (planoId: PlanoId): ResultadoPrecificacao | null =>
-      veiculo
+      veiculo && categoria
         ? pricingProvider.precificar({
-            categoria: categoriaDoTipo(veiculo.tipo),
+            categoria,
             valorFipe: veiculo.valor,
             planoId,
             usoComercial,
@@ -216,7 +238,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
 
     const preco = planoSelecionado ? precificar(planoSelecionado.id) : null;
 
-    const precosPorPlano = PLANOS.reduce(
+    const precosPorPlano = ofertados.reduce(
       (acc, plano) => {
         const resultado = precificar(plano.id);
         acc[plano.id] = precoDisponivel(resultado) ? resultado.mensalidadeBase : null;
@@ -231,8 +253,11 @@ export function WizardProvider({ children }: { children: ReactNode }) {
 
     return {
       ...estado,
+      perfil,
       hidratado,
       perfilCompleto: completo ? perfil : null,
+      planosOfertados: ofertados,
+      finalidadeFixa,
       recomendado,
       planoSelecionado,
       preco,

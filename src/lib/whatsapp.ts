@@ -1,5 +1,5 @@
 import { WHATSAPP_NUMERO } from "./config";
-import { formatBRL } from "./format";
+import { formatBRL, formatPercentual } from "./format";
 import type { CotacaoSnapshot } from "./leads/types";
 
 /**
@@ -24,7 +24,7 @@ export class WhatsAppService {
             valor: `${formatBRL(cotacao.valorParticipacao)} no 1º evento coberto`,
           }
         : {
-            percentual: `${Math.round(cotacao.percentualParticipacao * 100)}% da FIPE`,
+            percentual: `${formatPercentual(cotacao.percentualParticipacao)} da FIPE`,
             valor: `${formatBRL(cotacao.valorParticipacao)} por evento coberto`,
           };
 

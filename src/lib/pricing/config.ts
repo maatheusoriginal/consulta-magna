@@ -18,24 +18,30 @@ export interface PricingConfig {
   /** Piso mínimo contratual da participação, em reais. */
   participacaoMinima: number;
 
-  /** Valor único de filiação e ativação da proteção, em reais. */
-  taxaAdesao: number;
+  /**
+   * Piso da taxa de adesão, em reais.
+   *
+   * A adesão cobrada é `max(taxaAdesaoMinima, mensalidade da modalidade
+   * escolhida)` — ou seja, acompanha a mensalidade final quando ela supera o piso.
+   */
+  taxaAdesaoMinima: number;
 
   /**
-   * Efeito do uso comercial (aplicativo/táxi) sobre a MENSALIDADE.
+   * Agravo da MENSALIDADE para uso comercial (aplicativo/táxi).
    *
    * Uso comercial nunca altera o plano recomendado — isso é decidido apenas
    * pelas respostas do questionário de perfil.
    *
-   * Padrão `1` (sem efeito): a Magna precisa informar o agravo real antes de
-   * ligar isso em produção.
+   * Padrão `1.1666667`, inferido da única cotação comercial conhecida
+   * (Prisma LTZ 1.4 2015, FIPE R$ 51.630). Continua `ESTIMATED`.
    */
   fatorUsoComercial: number;
 
   /**
    * Modalidades de participação indisponíveis para uso comercial.
    *
-   * Padrão vazio: nenhuma restrição até a Magna confirmar a regra.
+   * Padrão: só a Padrão fica disponível para carro de aplicativo/táxi,
+   * conforme a regra observada no CRM.
    */
   participacoesBloqueadasUsoComercial: string[];
 }
@@ -50,18 +56,24 @@ function lerNumero(valor: string | undefined, padrao: number): number {
   return Number.isFinite(numero) && numero > 0 ? numero : padrao;
 }
 
+function lerLista(valor: string | undefined, padrao: string[]): string[] {
+  if (valor === undefined) return padrao;
+  return valor
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export const PRICING_CONFIG: PricingConfig = {
   hideDominatedParticipationOptions: lerBooleano(
     process.env.NEXT_PUBLIC_HIDE_DOMINATED_PARTICIPATION_OPTIONS,
     false,
   ),
   participacaoMinima: lerNumero(process.env.NEXT_PUBLIC_PARTICIPACAO_MINIMA, 1800),
-  taxaAdesao: lerNumero(process.env.NEXT_PUBLIC_TAXA_ADESAO, 300),
-  fatorUsoComercial: lerNumero(process.env.NEXT_PUBLIC_FATOR_USO_COMERCIAL, 1),
-  participacoesBloqueadasUsoComercial: (
-    process.env.NEXT_PUBLIC_PARTICIPACOES_BLOQUEADAS_USO_COMERCIAL ?? ""
-  )
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean),
+  taxaAdesaoMinima: lerNumero(process.env.NEXT_PUBLIC_TAXA_ADESAO_MINIMA, 300),
+  fatorUsoComercial: lerNumero(process.env.NEXT_PUBLIC_FATOR_USO_COMERCIAL, 1.1666667),
+  participacoesBloqueadasUsoComercial: lerLista(
+    process.env.NEXT_PUBLIC_PARTICIPACOES_BLOQUEADAS_USO_COMERCIAL,
+    ["reduzida", "minima", "zero"],
+  ),
 };

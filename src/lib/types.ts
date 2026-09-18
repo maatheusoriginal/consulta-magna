@@ -13,6 +13,15 @@ export function categoriaDoTipo(tipo: TipoVeiculo): CategoriaVeiculo {
   return CATEGORIA_POR_TIPO[tipo];
 }
 
+/**
+ * Categorias que não admitem uso em aplicativo/táxi.
+ *
+ * Para elas a finalidade é sempre particular e a pergunta não é exibida.
+ */
+export function exigeUsoParticular(tipo: TipoVeiculo): boolean {
+  return categoriaDoTipo(tipo) === "MOTORCYCLE";
+}
+
 export interface FipeItem {
   codigo: string;
   nome: string;

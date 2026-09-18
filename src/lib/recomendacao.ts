@@ -84,9 +84,26 @@ export interface Recomendacao {
   plano: Plano;
   justificativas: string[];
   pontuacao: number;
+  /**
+   * `true` quando o perfil apontava para um plano mais completo do que os
+   * oferecidos para a categoria do veículo (moto, por exemplo, só tem Bronze e
+   * Prata). Nesse caso `plano` é a opção disponível mais completa.
+   */
+  limitadoPelaCategoria: boolean;
 }
 
-export function recomendarPlano(respostas: RespostasQuestionario): Recomendacao {
+/**
+ * Recomenda um plano a partir do questionário, sempre dentro dos planos
+ * efetivamente oferecidos para a categoria do veículo.
+ *
+ * @param disponiveis planos comercializados para a categoria, vindos de
+ *   `PricingProvider.getAvailablePlanIds()`. O plano recomendado pertence
+ *   obrigatoriamente a esta lista.
+ */
+export function recomendarPlano(
+  respostas: RespostasQuestionario,
+  disponiveis: PlanoId[] = ORDEM,
+): Recomendacao {
   const sinais: Sinal[] = [
     PRIORIDADE[respostas.prioridade],
     VIAGENS[respostas.viagens],
@@ -109,21 +126,39 @@ export function recomendarPlano(respostas: RespostasQuestionario): Recomendacao 
     if (sinal.minimo) indice = Math.max(indice, ORDEM.indexOf(sinal.minimo));
   }
 
+  // O plano ideal é então ajustado à oferta real da categoria do veículo.
+  const ofertados = ORDEM.filter((id) => disponiveis.includes(id));
+  if (ofertados.length === 0) {
+    throw new Error("Nenhum plano disponível para recomendar nesta categoria.");
+  }
+
+  const idIdeal = ORDEM[indice];
+  const idEscolhido =
+    [...ofertados].reverse().find((id) => ORDEM.indexOf(id) <= indice) ?? ofertados[0];
+  const limitadoPelaCategoria = idEscolhido !== idIdeal;
+
   const justificativas = sinais
     .map((sinal) => sinal.justificativa)
     .filter((j): j is string => Boolean(j))
-    .slice(0, 3);
+    .slice(0, limitadoPelaCategoria ? 2 : 3);
+
+  const plano = getPlano(idEscolhido);
+
+  if (limitadoPelaCategoria) {
+    justificativas.push(
+      `${plano.nome} é a opção mais completa disponível para este tipo de veículo.`,
+    );
+  }
 
   // Sempre entregamos três motivos; completamos com o diferencial do plano.
-  const plano = getPlano(ORDEM[indice]);
   while (justificativas.length < 3) {
     const extra = plano.destaques[justificativas.length];
     justificativas.push(
       extra
         ? `Inclui ${extra.toLowerCase()}.`
-        : "Melhor equilíbrio entre cobertura e mensalidade para o seu perfil.",
+        : "Equilíbrio entre cobertura e mensalidade para as respostas informadas.",
     );
   }
 
-  return { plano, justificativas, pontuacao };
+  return { plano, justificativas, pontuacao, limitadoPelaCategoria };
 }

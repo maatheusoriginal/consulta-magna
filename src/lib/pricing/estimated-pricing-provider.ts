@@ -1,3 +1,4 @@
+import { formatPercentual } from "../format";
 import type { CategoriaVeiculo, ParticipacaoId, PlanoId } from "../types";
 import { PRICING_CONFIG, type PricingConfig } from "./config";
 import type {
@@ -13,64 +14,90 @@ import type {
  * Regra de mensalidade INFERIDA a partir de cotações de referência.
  * Deve ser substituída por fonte oficial quando disponível.
  *
- * As taxas abaixo foram deduzidas de um punhado de cotações de exemplo e NÃO
- * são uma fórmula confirmada pela Magna. Por isso todo resultado deste provedor
- * sai com `status: "ESTIMATED"` e jamais deve ser apresentado como valor oficial.
+ * A estrutura abaixo foi deduzida das cotações reais listadas em
+ * `REFERENCIAS` e NÃO é uma fórmula confirmada pela Magna. Por isso todo
+ * resultado sai com `status: "ESTIMATED"` e jamais deve ser apresentado como
+ * valor oficial.
  */
 export const AVISO_REGRA_INFERIDA =
   "Regra de mensalidade inferida a partir de cotações de referência. " +
   "Deve ser substituída por fonte oficial quando disponível.";
 
-/** Confiabilidade da origem de cada tabela de taxas. */
+/**
+ * Cotações reais que sustentam a regra. Servem de documentação e são as mesmas
+ * usadas nos testes (`tests/precificacao.test.ts`).
+ */
+export const REFERENCIAS = {
+  CAR: [
+    { nome: "Gol 2013", valorFipe: 28436, bronze: 108.07, prata: 132.87, ouro: 164.27, premium: 177.77 },
+    { nome: "HB20 Premium 2013", valorFipe: 46540, bronze: 133.25, prata: 158.05, ouro: 189.45, premium: 202.95 },
+    { nome: "Prisma LTZ 1.4 2015", valorFipe: 51630, bronze: 140.46, prata: 165.26, ouro: 196.66, premium: 210.16 },
+  ],
+  MOTORCYCLE: [
+    { nome: "Honda XRE 190 Flex 2025", codigoFipe: "811141-3", valorFipe: 25197, bronze: 118.19, prata: 142.98 },
+    { nome: "Honda CG 150 Fan ESi 2013", codigoFipe: "811101-4", valorFipe: 11112, bronze: 80.0, prata: 104.44 },
+  ],
+} as const;
+
+/** Confiabilidade da origem de cada tabela. */
 type Confianca =
-  /** Reproduz exatamente as cotações de referência conhecidas. */
-  | "calibrada-com-cotacoes-de-referencia"
-  /** Sem cotações de referência: valores provisórios aguardando a Magna. */
-  | "provisoria-aguardando-tabela-da-magna";
+  /** Ajustada contra três cotações reais de carro. */
+  | "inferida-de-tres-cotacoes-de-carro"
+  /** Ajustada contra duas cotações reais de moto. */
+  | "inferida-de-duas-cotacoes-de-moto";
 
-interface TaxaPlano {
-  /** Percentual mensal sobre o valor FIPE do veículo. */
-  taxaMensalFipe: number;
-  /** Mensalidade mínima aplicada quando o percentual fica abaixo do piso. */
-  mensalidadeMinima: number;
-}
-
+/**
+ * Estrutura observada nas cotações: uma mensalidade base que cresce linearmente
+ * com a FIPE, mais um adicional fixo por plano.
+ *
+ *     mensalidade = base + adicionalDoPlano
+ *     base        = valorFixo + valorFipe * fatorFipe
+ *
+ * Os adicionais por plano são os mesmos em carro e moto nas cotações conhecidas.
+ */
 interface RegraCategoria {
   confianca: Confianca;
-  /** De onde vieram os números desta tabela. */
   origem: string;
-  taxas: Record<PlanoId, TaxaPlano>;
+  /** Planos efetivamente comercializados para a categoria. */
+  planosDisponiveis: PlanoId[];
+  base: { valorFixo: number; fatorFipe: number };
+  /** Adicional fixo por plano, em reais. */
+  adicionalPorPlano: Partial<Record<PlanoId, number>>;
+  /** Mensalidade mínima observada para a categoria. */
+  mensalidadeMinima: number;
+  /** Percentual da FIPE de cada modalidade de participação. */
+  percentuaisParticipacao: Record<Exclude<ParticipacaoId, "zero">, number>;
 }
 
 /**
- * Cada categoria tem a sua própria tabela. A fórmula de carro NUNCA é aplicada
+ * Cada categoria tem a sua própria regra. A fórmula de carro NUNCA é aplicada
  * automaticamente a moto ou caminhão: categoria sem entrada aqui responde
  * `UNAVAILABLE`.
  */
 const REGRAS_POR_CATEGORIA: Partial<Record<CategoriaVeiculo, RegraCategoria>> = {
   CAR: {
-    confianca: "calibrada-com-cotacoes-de-referencia",
+    confianca: "inferida-de-tres-cotacoes-de-carro",
     origem:
-      "Calibrada para reproduzir as cotações de referência de um veículo com FIPE " +
-      "R$ 28.436,00 (Bronze R$ 108,07 · Prata R$ 132,87 · Ouro R$ 164,27 · Premium R$ 177,77).",
-    taxas: {
-      bronze: { taxaMensalFipe: 0.0038005, mensalidadeMinima: 79.9 },
-      prata: { taxaMensalFipe: 0.0046726, mensalidadeMinima: 99.9 },
-      ouro: { taxaMensalFipe: 0.0057768, mensalidadeMinima: 119.9 },
-      premium: { taxaMensalFipe: 0.0062516, mensalidadeMinima: 139.9 },
-    },
+      "Ajustada contra Gol 2013 (FIPE R$ 28.436), HB20 Premium 2013 (FIPE R$ 46.540) " +
+      "e Prisma LTZ 1.4 2015 (FIPE R$ 51.630). Divergência máxima observada: R$ 0,06.",
+    planosDisponiveis: ["bronze", "prata", "ouro", "premium"],
+    base: { valorFixo: 52.25, fatorFipe: 0.001395 },
+    adicionalPorPlano: { bronze: 16.14, prata: 40.94, ouro: 72.34, premium: 85.84 },
+    mensalidadeMinima: 0,
+    percentuaisParticipacao: { padrao: 0.12, reduzida: 0.08, minima: 0.06 },
   },
   MOTORCYCLE: {
-    confianca: "provisoria-aguardando-tabela-da-magna",
+    confianca: "inferida-de-duas-cotacoes-de-moto",
     origem:
-      "Não há cotações de referência de motocicleta. Estes números são provisórios " +
-      "e precisam ser substituídos pela tabela da Magna antes de ir a produção.",
-    taxas: {
-      bronze: { taxaMensalFipe: 0.0052, mensalidadeMinima: 69.9 },
-      prata: { taxaMensalFipe: 0.0063, mensalidadeMinima: 84.9 },
-      ouro: { taxaMensalFipe: 0.0078, mensalidadeMinima: 99.9 },
-      premium: { taxaMensalFipe: 0.0085, mensalidadeMinima: 114.9 },
-    },
+      "Ajustada contra Honda XRE 190 Flex 2025 (FIPE R$ 25.197, cód. 811141-3) e " +
+      "Honda CG 150 Fan ESi 2013 (FIPE R$ 11.112, cód. 811101-4). " +
+      "Só há referência de Bronze e Prata: Ouro e Premium não são oferecidos.",
+    // Sem dados que confirmem Ouro/Premium para moto, a oferta para aqui.
+    planosDisponiveis: ["bronze", "prata"],
+    base: { valorFixo: 33.1, fatorFipe: 0.002736 },
+    adicionalPorPlano: { bronze: 16.14, prata: 40.94 },
+    mensalidadeMinima: 80,
+    percentuaisParticipacao: { padrao: 0.15, reduzida: 0.125, minima: 0.1 },
   },
   // TRUCK não tem regra: caminhão exige análise individual, então o provedor
   // responde UNAVAILABLE e a interface encaminha para um consultor.
@@ -80,45 +107,25 @@ interface ModalidadeParticipacao {
   id: ParticipacaoId;
   nome: string;
   badge?: string;
-  /** Percentual da FIPE. `null` para participação zero. */
-  percentual: number | null;
   /** Multiplicador aplicado sobre a mensalidade base do plano. */
   fatorMensalidade: number;
-  descricao: string;
   carenciaDias?: number;
 }
 
 const MODALIDADES: ModalidadeParticipacao[] = [
-  {
-    id: "padrao",
-    nome: "Padrão",
-    badge: "Mais escolhido",
-    percentual: 0.12,
-    fatorMensalidade: 1,
-    descricao: "Participação calculada em 12% da tabela FIPE do veículo.",
-  },
+  { id: "padrao", nome: "Padrão", fatorMensalidade: 1 },
   {
     id: "reduzida",
     nome: "Reduzida",
     badge: "Menor desembolso no evento",
-    percentual: 0.08,
     fatorMensalidade: 1.055556,
-    descricao: "Equilíbrio com menor valor a desembolsar em caso de evento coberto.",
   },
-  {
-    id: "minima",
-    nome: "Mínima",
-    percentual: 0.06,
-    fatorMensalidade: 1.111111,
-    descricao: "Participação de 6% da FIPE, respeitando o piso mínimo contratual.",
-  },
+  { id: "minima", nome: "Mínima", fatorMensalidade: 1.111111 },
   {
     id: "zero",
     nome: "Participação zero",
     badge: "Sem desembolso no 1º evento",
-    percentual: null,
     fatorMensalidade: 1.333333,
-    descricao: "Você não paga participação no primeiro evento coberto.",
     carenciaDias: 60,
   },
 ];
@@ -145,6 +152,11 @@ export class EstimatedPricingProvider implements PricingProvider {
     return REGRAS_POR_CATEGORIA[categoria];
   }
 
+  /** Planos comercializados para a categoria. Vazio quando não há oferta. */
+  getAvailablePlanIds(categoria: CategoriaVeiculo): PlanoId[] {
+    return [...(REGRAS_POR_CATEGORIA[categoria]?.planosDisponiveis ?? [])];
+  }
+
   precificar(entrada: EntradaPrecificacao): ResultadoPrecificacao {
     const regra = REGRAS_POR_CATEGORIA[entrada.categoria];
 
@@ -158,6 +170,15 @@ export class EstimatedPricingProvider implements PricingProvider {
       };
     }
 
+    const adicional = regra.adicionalPorPlano[entrada.planoId];
+    if (!regra.planosDisponiveis.includes(entrada.planoId) || adicional === undefined) {
+      return {
+        status: "UNAVAILABLE",
+        provedor: this.nome,
+        motivo: "Este plano não é oferecido para esta categoria de veículo.",
+      };
+    }
+
     if (!(entrada.valorFipe > 0)) {
       return {
         status: "UNAVAILABLE",
@@ -166,10 +187,10 @@ export class EstimatedPricingProvider implements PricingProvider {
       };
     }
 
-    const taxa = regra.taxas[entrada.planoId];
+    const base = regra.base.valorFixo + entrada.valorFipe * regra.base.fatorFipe;
     const fatorComercial = entrada.usoComercial ? this.config.fatorUsoComercial : 1;
     const mensalidadeBase = arredondar(
-      Math.max(entrada.valorFipe * taxa.taxaMensalFipe, taxa.mensalidadeMinima) * fatorComercial,
+      Math.max(base + adicional, regra.mensalidadeMinima) * fatorComercial,
     );
 
     return {
@@ -177,13 +198,14 @@ export class EstimatedPricingProvider implements PricingProvider {
       provedor: this.nome,
       observacao: AVISO_REGRA_INFERIDA,
       mensalidadeBase,
-      taxaAdesao: this.config.taxaAdesao,
-      participacoes: this.calcularParticipacoes(entrada, mensalidadeBase),
+      taxaAdesaoMinima: this.config.taxaAdesaoMinima,
+      participacoes: this.calcularParticipacoes(entrada, regra, mensalidadeBase),
     };
   }
 
   private calcularParticipacoes(
     entrada: EntradaPrecificacao,
+    regra: RegraCategoria,
     mensalidadeBase: number,
   ): ParticipacaoPrecificada[] {
     const bloqueadas = entrada.usoComercial
@@ -192,23 +214,32 @@ export class EstimatedPricingProvider implements PricingProvider {
 
     const calculadas = MODALIDADES.filter((m) => !bloqueadas.includes(m.id))
       .map<ParticipacaoPrecificada>((modalidade) => {
-        const bruto =
-          modalidade.percentual === null ? 0 : entrada.valorFipe * modalidade.percentual;
-        const pisoAplicado =
-          modalidade.percentual !== null && bruto < this.config.participacaoMinima;
+        const percentual =
+          modalidade.id === "zero"
+            ? null
+            : regra.percentuaisParticipacao[modalidade.id as Exclude<ParticipacaoId, "zero">];
+
+        const bruto = percentual === null ? 0 : entrada.valorFipe * percentual;
+        const pisoAplicado = percentual !== null && bruto < this.config.participacaoMinima;
+        const mensalidade = arredondar(mensalidadeBase * modalidade.fatorMensalidade);
 
         return {
           id: modalidade.id,
           nome: modalidade.nome,
           badge: modalidade.badge,
-          descricao: modalidade.descricao,
-          percentual: modalidade.percentual,
+          descricao:
+            percentual === null
+              ? "Você não paga participação no primeiro evento coberto."
+              : `Participação de ${formatPercentual(percentual)} da tabela FIPE do veículo.`,
+          percentual,
           valor:
-            modalidade.percentual === null
+            percentual === null
               ? 0
               : arredondar(pisoAplicado ? this.config.participacaoMinima : bruto),
           pisoAplicado,
-          mensalidade: arredondar(mensalidadeBase * modalidade.fatorMensalidade),
+          mensalidade,
+          // A adesão acompanha a mensalidade FINAL da modalidade escolhida.
+          taxaAdesao: Math.max(this.config.taxaAdesaoMinima, mensalidade),
           carenciaDias: modalidade.carenciaDias,
         };
       })

@@ -3,6 +3,7 @@
 import { ArrowRight, Car, CircleAlert, CircleCheck, Loader2, PenLine, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { SelectionCard } from "@/components/SelectionCard";
 import { Select } from "@/components/Select";
 import { getJson } from "@/lib/client-api";
 import { formatBRL, formatPlaca, isPlacaValida, normalizePlaca, titleCase } from "@/lib/format";
@@ -12,7 +13,8 @@ import { useWizard } from "@/lib/wizard";
 interface RespostaPlaca {
   configurado: boolean;
   dados?: { marca?: string; modelo?: string; ano?: number };
-  sugestao?: { tipo: TipoVeiculo; marca?: FipeItem; modelo?: FipeItem; ano?: FipeItem };
+  /** Versões compatíveis. A escolha é sempre do usuário — nunca automática. */
+  candidatos: FipeVeiculo[];
 }
 
 const TIPOS: Array<{ id: TipoVeiculo; label: string }> = [
@@ -44,6 +46,7 @@ export function StepVeiculo({
   const [modelo, setModelo] = useState("");
   const [ano, setAno] = useState("");
   const [carregando, setCarregando] = useState<"marcas" | "modelos" | "anos" | null>(null);
+  const [candidatos, setCandidatos] = useState<FipeVeiculo[]>([]);
 
   const buscarPreco = useCallback(
     async (t: TipoVeiculo, ma: string, mo: string, an: string) => {
@@ -138,6 +141,7 @@ export function StepVeiculo({
     evento.preventDefault();
     setErro(null);
     setAviso(null);
+    setCandidatos([]);
 
     if (!isPlacaValida(placa)) {
       setErro("Informe uma placa válida (ABC1234 ou ABC1D23).");
@@ -156,18 +160,15 @@ export function StepVeiculo({
         return;
       }
 
-      const s = resposta.sugestao;
-      if (s?.marca && s.modelo && s.ano) {
-        setTipo(s.tipo);
-        setMarca(s.marca.codigo);
-        setModelo(s.modelo.codigo);
-        setAno(s.ano.codigo);
-        await buscarPreco(s.tipo, s.marca.codigo, s.modelo.codigo, s.ano.codigo);
+      // A correspondência com a FIPE é aproximada: quem confirma a versão é o
+      // usuário. Nunca avançamos direto para uma FIPE escolhida por nós.
+      if (resposta.candidatos.length > 0) {
+        setCandidatos(resposta.candidatos);
         return;
       }
 
       setAviso(
-        `Encontramos ${[resposta.dados?.marca, resposta.dados?.modelo].filter(Boolean).join(" ") || "o veículo"}, mas precisamos que você confirme a versão exata para buscar a FIPE.`,
+        `Encontramos ${[resposta.dados?.marca, resposta.dados?.modelo].filter(Boolean).join(" ") || "o veículo"}, mas não conseguimos identificar a versão na tabela FIPE. Selecione marca, modelo e ano.`,
       );
       setModo("manual");
     } catch (e) {
@@ -175,6 +176,64 @@ export function StepVeiculo({
     } finally {
       setConsultando(false);
     }
+  }
+
+  // ------------------------------------------------ confirmação da versão FIPE
+  if (!veiculo && candidatos.length > 0) {
+    return (
+      <div className="animate-fade-in-up space-y-6">
+        <header>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-subtle px-3 py-1.5 text-xs font-semibold text-primary">
+            <CircleCheck size={14} strokeWidth={2} aria-hidden />
+            Placa {formatPlaca(placa)}
+          </span>
+          <h1 className="mt-4 text-[28px] font-bold leading-tight md:text-[36px]">
+            Selecione a versão correta
+          </h1>
+          <p className="mt-2 text-base text-text-secondary">
+            A placa aponta para mais de uma versão na tabela FIPE. Confirme qual é a do seu
+            veículo para calcularmos os valores certos.
+          </p>
+        </header>
+
+        <div role="radiogroup" aria-label="Versões compatíveis" className="space-y-3">
+          {candidatos.map((candidato) => (
+            <SelectionCard
+              key={`${candidato.modeloCodigo}-${candidato.anoCodigo}`}
+              selecionado={false}
+              onSelect={() => setVeiculo(candidato)}
+              ariaLabel={`${candidato.marca} ${candidato.modelo}, ${candidato.anoModelo}, FIPE ${formatBRL(candidato.valor)}`}
+            >
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-text-muted">
+                {candidato.marca}
+              </p>
+              <p className="mt-1 pr-8 text-base font-semibold leading-snug">{candidato.modelo}</p>
+              <p className="mt-1 text-sm text-text-secondary">
+                {candidato.anoModelo} · {titleCase(candidato.combustivel)}
+              </p>
+              <p className="mt-3 text-sm font-bold">
+                FIPE {formatBRL(candidato.valor)}
+                <span className="ml-2 text-xs font-normal text-text-muted">
+                  Cód. {candidato.codigoFipe}
+                </span>
+              </p>
+            </SelectionCard>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setCandidatos([]);
+            setModo("manual");
+          }}
+          className="btn-ghost w-full"
+        >
+          <Search size={16} strokeWidth={1.8} aria-hidden />
+          Nenhuma dessas? Buscar por marca e modelo
+        </button>
+      </div>
+    );
   }
 
   // ---------------------------------------------------------------- resultado
@@ -231,6 +290,7 @@ export function StepVeiculo({
             type="button"
             onClick={() => {
               setVeiculo(null);
+              setCandidatos([]);
               setAviso(null);
               setErro(null);
             }}

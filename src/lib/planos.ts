@@ -3,17 +3,19 @@ import type { Plano, PlanoId } from "./types";
 /**
  * Catálogo de planos: apenas coberturas e textos.
  *
- * Preço NÃO mora aqui. Quanto custa cada plano é responsabilidade de um
- * `PricingProvider` (`src/lib/pricing`), que recebe o valor FIPE já apurado.
+ * Preço NÃO mora aqui. Quanto custa cada plano, e quais planos são oferecidos
+ * para cada categoria de veículo, é responsabilidade de um `PricingProvider`
+ * (`src/lib/pricing`).
  */
 
 /** Itens comparados na tabela, na ordem em que aparecem. */
 export const ITENS_COMPARACAO = [
   "Roubo e furto",
   "Perda total",
-  "Incêndio e fenômenos da natureza",
+  "Incêndio, explosão e fenômenos da natureza",
   "Colisão e capotamento",
   "Assistência 24h (guincho)",
+  "Reboque",
   "Pane elétrica, mecânica e seca",
   "Danos materiais a terceiros",
   "Carro reserva",
@@ -26,18 +28,22 @@ export const PLANOS: Plano[] = [
     id: "bronze",
     nome: "Bronze",
     subtitulo: "Essencial",
-    descricao: "Proteção fundamental contra roubo, furto e perda total.",
+    descricao: "Proteção contra roubo, furto e perda total, com assistência 24h.",
     destaques: [
-      "Roubo, furto, incêndio e perda total",
+      "Roubo, furto e perda total",
       "Assistência 24h com guincho até 250 km",
+      "Reboque",
       "Pane elétrica, mecânica e seca",
     ],
     coberturas: [
       { label: "Roubo e furto", valor: true },
       { label: "Perda total", valor: true },
-      { label: "Incêndio e fenômenos da natureza", valor: true },
+      // Incêndio, explosão e fenômenos da natureza só aparecem a partir do Prata
+      // nas propostas de referência.
+      { label: "Incêndio, explosão e fenômenos da natureza", valor: false },
       { label: "Colisão e capotamento", valor: false },
       { label: "Assistência 24h (guincho)", valor: "250 km" },
+      { label: "Reboque", valor: true },
       { label: "Pane elétrica, mecânica e seca", valor: true },
       { label: "Danos materiais a terceiros", valor: false },
       { label: "Carro reserva", valor: false },
@@ -49,18 +55,20 @@ export const PLANOS: Plano[] = [
     id: "prata",
     nome: "Prata",
     subtitulo: "Intermediário",
-    descricao: "Cobertura completa contra acidentes, colisão e danos a terceiros.",
+    descricao: "Acrescenta colisão, incêndio e danos materiais a terceiros.",
     destaques: [
       "Roubo, furto, colisão e perda total",
+      "Incêndio, explosão e fenômenos da natureza",
       "Assistência 24h com guincho até 250 km",
       "Danos materiais a terceiros até R$ 50.000",
     ],
     coberturas: [
       { label: "Roubo e furto", valor: true },
       { label: "Perda total", valor: true },
-      { label: "Incêndio e fenômenos da natureza", valor: true },
+      { label: "Incêndio, explosão e fenômenos da natureza", valor: true },
       { label: "Colisão e capotamento", valor: true },
       { label: "Assistência 24h (guincho)", valor: "250 km" },
+      { label: "Reboque", valor: true },
       { label: "Pane elétrica, mecânica e seca", valor: true },
       { label: "Danos materiais a terceiros", valor: "R$ 50.000" },
       { label: "Carro reserva", valor: false },
@@ -71,8 +79,8 @@ export const PLANOS: Plano[] = [
   {
     id: "ouro",
     nome: "Ouro",
-    subtitulo: "Completo",
-    descricao: "Proteção avançada com assistência ampliada, terceiros e carro reserva.",
+    subtitulo: "Avançado",
+    descricao: "Amplia a assistência e acrescenta carro reserva e vidros.",
     destaques: [
       "Roubo, furto, colisão, incêndio e fenômenos da natureza",
       "Assistência 24h com guincho até 500 km",
@@ -83,9 +91,10 @@ export const PLANOS: Plano[] = [
     coberturas: [
       { label: "Roubo e furto", valor: true },
       { label: "Perda total", valor: true },
-      { label: "Incêndio e fenômenos da natureza", valor: true },
+      { label: "Incêndio, explosão e fenômenos da natureza", valor: true },
       { label: "Colisão e capotamento", valor: true },
       { label: "Assistência 24h (guincho)", valor: "500 km" },
+      { label: "Reboque", valor: true },
       { label: "Pane elétrica, mecânica e seca", valor: true },
       { label: "Danos materiais a terceiros", valor: "R$ 100.000" },
       { label: "Carro reserva", valor: "15 dias", nota: "carência 7 dias" },
@@ -96,8 +105,8 @@ export const PLANOS: Plano[] = [
   {
     id: "premium",
     nome: "Premium",
-    subtitulo: "Cobertura total",
-    descricao: "Proteção completa para o seu veículo com máxima cobertura e assistência.",
+    subtitulo: "Ampliado",
+    descricao: "Os maiores limites de assistência, terceiros e carro reserva.",
     destaques: [
       "Todas as coberturas do plano Ouro",
       "Assistência 24h com guincho até 750 km",
@@ -108,9 +117,10 @@ export const PLANOS: Plano[] = [
     coberturas: [
       { label: "Roubo e furto", valor: true },
       { label: "Perda total", valor: true },
-      { label: "Incêndio e fenômenos da natureza", valor: true },
+      { label: "Incêndio, explosão e fenômenos da natureza", valor: true },
       { label: "Colisão e capotamento", valor: true },
       { label: "Assistência 24h (guincho)", valor: "750 km" },
+      { label: "Reboque", valor: true },
       { label: "Pane elétrica, mecânica e seca", valor: true },
       { label: "Danos materiais a terceiros", valor: "R$ 150.000" },
       { label: "Carro reserva", valor: "30 dias", nota: "carência 7 dias" },
@@ -124,4 +134,9 @@ export function getPlano(id: PlanoId): Plano {
   const plano = PLANOS.find((p) => p.id === id);
   if (!plano) throw new Error(`Plano desconhecido: ${id}`);
   return plano;
+}
+
+/** Catálogo filtrado pelos planos oferecidos para a categoria do veículo. */
+export function planosDisponiveis(ids: PlanoId[]): Plano[] {
+  return PLANOS.filter((plano) => ids.includes(plano.id));
 }

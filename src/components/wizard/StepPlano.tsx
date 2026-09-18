@@ -7,12 +7,11 @@ import { Preco } from "@/components/Preco";
 import { VeiculoResumo } from "@/components/VeiculoResumo";
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { formatBRL } from "@/lib/format";
-import { PLANOS } from "@/lib/planos";
 import { whatsAppService } from "@/lib/whatsapp";
 import { useWizard } from "@/lib/wizard";
 
 export function StepPlano() {
-  const { veiculo, recomendado, planoSelecionado, preco, precosPorPlano, setPlano, irPara } =
+  const { veiculo, recomendado, planoSelecionado, planosOfertados, preco, precosPorPlano, setPlano, irPara } =
     useWizard();
 
   if (!veiculo || !recomendado || !planoSelecionado) return null;
@@ -50,7 +49,7 @@ export function StepPlano() {
     );
   }
 
-  const outros = PLANOS.filter((p) => p.id !== planoSelecionado.id);
+  const outros = planosOfertados.filter((p) => p.id !== planoSelecionado.id);
   const ehRecomendado = planoSelecionado.id === recomendado.plano.id;
 
   return (
@@ -97,6 +96,11 @@ export function StepPlano() {
             <Lightbulb size={18} strokeWidth={1.8} className="text-primary" aria-hidden />
             <h3 className="text-base font-semibold">Por que indicamos este plano?</h3>
           </div>
+          {recomendado.limitadoPelaCategoria ? (
+            <p className="mt-3 text-sm text-text-secondary">
+              Para este tipo de veículo os planos Ouro e Premium não são oferecidos.
+            </p>
+          ) : null}
           <ol className="mt-4 space-y-3">
             {recomendado.justificativas.map((motivo, indice) => (
               <li key={motivo} className="flex gap-3 text-sm text-text-secondary">
@@ -123,12 +127,15 @@ export function StepPlano() {
           <ArrowRight size={18} strokeWidth={2} aria-hidden />
         </button>
 
-        <button type="button" onClick={() => irPara("comparar")} className="btn-secondary">
-          <SlidersHorizontal size={16} strokeWidth={1.8} aria-hidden />
-          Comparar os {PLANOS.length} planos
-        </button>
+        {planosOfertados.length > 1 ? (
+          <button type="button" onClick={() => irPara("comparar")} className="btn-secondary">
+            <SlidersHorizontal size={16} strokeWidth={1.8} aria-hidden />
+            Comparar os {planosOfertados.length} planos
+          </button>
+        ) : null}
       </div>
 
+      {outros.length === 0 ? null : (
       <section>
         <h3 className="mb-3 text-sm font-semibold text-text-secondary">Outras opções</h3>
         <ul className="space-y-2">
@@ -161,6 +168,7 @@ export function StepPlano() {
           ))}
         </ul>
       </section>
+      )}
     </div>
   );
 }

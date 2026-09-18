@@ -7,7 +7,13 @@ import { ListaCoberturas } from "@/components/ListaCoberturas";
 import { postJson } from "@/lib/client-api";
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { montarSnapshot } from "@/lib/cotacao";
-import { formatBRL, formatWhatsApp, isEmailValido, isWhatsAppValido } from "@/lib/format";
+import {
+  formatBRL,
+  formatPercentual,
+  formatWhatsApp,
+  isEmailValido,
+  isWhatsAppValido,
+} from "@/lib/format";
 import type { CotacaoSnapshot } from "@/lib/leads/types";
 import { useWizard } from "@/lib/wizard";
 
@@ -66,7 +72,7 @@ export function StepResumo() {
       planoRecomendado: recomendado!.plano.id,
       planoEscolhido: planoSelecionado!.id,
       participacao: participacao!,
-      taxaAdesao: preco!.status === "UNAVAILABLE" ? 0 : preco!.taxaAdesao,
+      taxaAdesao: participacao!.taxaAdesao,
       statusPrecificacao: preco!.status,
       lead,
     });
@@ -151,14 +157,16 @@ export function StepResumo() {
                   ? "No 1º evento coberto · carência de 60 dias"
                   : participacao.pisoAplicado
                     ? "Piso mínimo contratual — por evento coberto"
-                    : `${participacao.nome} (${Math.round(participacao.percentual * 100)}%) — por evento coberto`}
+                    : `${participacao.nome} (${formatPercentual(participacao.percentual)}) — por evento coberto`}
               </dd>
             </div>
 
             <div className="rounded-card border border-border-subtle p-4">
               <dt className="text-xs font-medium text-text-secondary">Taxa de adesão</dt>
-              <dd className="mt-1 text-lg font-bold">{formatBRL(preco.taxaAdesao)}</dd>
-              <dd className="mt-1 text-xs text-text-muted">Valor único de ativação do plano</dd>
+              <dd className="mt-1 text-lg font-bold">{formatBRL(participacao.taxaAdesao)}</dd>
+              <dd className="mt-1 text-xs text-text-muted">
+                Valor único de ativação · mínimo de {formatBRL(preco.taxaAdesaoMinima)}
+              </dd>
             </div>
           </dl>
 
@@ -181,7 +189,7 @@ export function StepResumo() {
       <section className="rounded-card-xl border border-border-subtle bg-white p-6 shadow-card">
         <h2 className="text-xl font-bold leading-tight">Vamos continuar seu atendimento?</h2>
         <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-          Converse com um consultor pelo WhatsApp, sem compromisso, para tirar dúvidas e finalizar.
+          Converse com um consultor pelo WhatsApp para tirar dúvidas e finalizar.
         </p>
 
         <form onSubmit={enviar} noValidate className="mt-6 space-y-4">

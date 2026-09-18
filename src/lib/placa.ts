@@ -1,8 +1,8 @@
 import "server-only";
 
-import { listarAnos, listarMarcas, listarModelos } from "./fipe";
+import { consultarPreco, listarAnos, listarMarcas, listarModelos } from "./fipe";
 import { normalizePlaca } from "./format";
-import type { FipeItem, TipoVeiculo } from "./types";
+import type { FipeItem, FipeVeiculo, TipoVeiculo } from "./types";
 
 /**
  * Consulta de placa.
@@ -17,8 +17,15 @@ import type { FipeItem, TipoVeiculo } from "./types";
  *
  * Sem provedor configurado a consulta responde `configurado: false` e a interface
  * encaminha o usuário para a busca por marca/modelo/ano — que usa apenas a API
- * gratuita da FIPE e mantém o fluxo 100% funcional sem nenhuma chave.
+ * gratuita da FIPE e mantém o fluxo funcional sem nenhuma chave.
+ *
+ * IMPORTANTE: o retorno é sempre uma LISTA DE CANDIDATOS. A correspondência
+ * entre o texto devolvido pelo provedor de placa e as versões da FIPE é
+ * aproximada, então a escolha da versão é sempre do usuário — nunca automática.
  */
+
+/** Quantidade máxima de versões oferecidas para o usuário escolher. */
+const MAX_CANDIDATOS = 6;
 
 export interface DadosPlaca {
   placa: string;
@@ -28,17 +35,14 @@ export interface DadosPlaca {
   combustivel?: string;
 }
 
-export interface SugestaoPlaca {
-  tipo: TipoVeiculo;
-  marca?: FipeItem;
-  modelo?: FipeItem;
-  ano?: FipeItem;
-}
-
 export interface ResultadoPlaca {
   configurado: boolean;
   dados?: DadosPlaca;
-  sugestao?: SugestaoPlaca;
+  /**
+   * Versões da FIPE compatíveis com os dados da placa, para o usuário confirmar.
+   * Vazio quando não foi possível montar candidatos confiáveis.
+   */
+  candidatos: FipeVeiculo[];
 }
 
 function normalizarTexto(texto: string): string {
@@ -51,7 +55,7 @@ function normalizarTexto(texto: string): string {
     .trim();
 }
 
-/** Pontua o quanto `candidato` combina com `alvo`, contando os termos em comum. */
+/** Fração dos termos de `alvo` presentes em `candidato` (0 a 1). */
 function pontuar(alvo: string, candidato: string): number {
   const termosAlvo = normalizarTexto(alvo).split(" ").filter(Boolean);
   const termosCandidato = new Set(normalizarTexto(candidato).split(" ").filter(Boolean));
@@ -61,22 +65,16 @@ function pontuar(alvo: string, candidato: string): number {
   for (const termo of termosAlvo) {
     if (termosCandidato.has(termo)) acertos += 1;
   }
-  // Penaliza candidatos muito mais longos que o alvo para evitar versões exóticas.
-  return acertos / termosAlvo.length - termosCandidato.size / 200;
+  return acertos / termosAlvo.length;
 }
 
-function melhorCorrespondencia(alvo: string | undefined, itens: FipeItem[]): FipeItem | undefined {
-  if (!alvo) return undefined;
-  let melhor: FipeItem | undefined;
-  let melhorNota = 0;
-  for (const item of itens) {
-    const nota = pontuar(alvo, item.nome);
-    if (nota > melhorNota) {
-      melhorNota = nota;
-      melhor = item;
-    }
-  }
-  return melhorNota > 0 ? melhor : undefined;
+function ordenarPorAderencia(alvo: string | undefined, itens: FipeItem[]): FipeItem[] {
+  if (!alvo) return [];
+  return itens
+    .map((item) => ({ item, nota: pontuar(alvo, item.nome) }))
+    .filter(({ nota }) => nota > 0)
+    .sort((a, b) => b.nota - a.nota)
+    .map(({ item }) => item);
 }
 
 async function consultarProvedor(placa: string): Promise<DadosPlaca | null> {
@@ -109,7 +107,8 @@ async function consultarProvedor(placa: string): Promise<DadosPlaca | null> {
     return undefined;
   };
 
-  const anoBruto = texto(["ano", "anoModelo", "ano_modelo"]) ?? String(bruto.ano ?? bruto.anoModelo ?? "");
+  const anoBruto =
+    texto(["ano", "anoModelo", "ano_modelo"]) ?? String(bruto.ano ?? bruto.anoModelo ?? "");
   const ano = Number.parseInt(anoBruto, 10);
 
   const dados: DadosPlaca = {
@@ -123,22 +122,41 @@ async function consultarProvedor(placa: string): Promise<DadosPlaca | null> {
   return dados.marca || dados.modelo ? dados : null;
 }
 
-/** Mapeia os dados brutos da placa para os códigos correspondentes da tabela FIPE. */
-async function sugerirFipe(dados: DadosPlaca, tipo: TipoVeiculo): Promise<SugestaoPlaca> {
-  const sugestao: SugestaoPlaca = { tipo };
+/**
+ * Monta a lista de versões da FIPE compatíveis com os dados da placa.
+ *
+ * Nunca devolve "a melhor" escolhida por conta própria: devolve todas as
+ * candidatas relevantes, já com código e valor FIPE, para o usuário confirmar.
+ */
+async function montarCandidatos(dados: DadosPlaca, tipo: TipoVeiculo): Promise<FipeVeiculo[]> {
+  // Sem o ano não dá para apurar valor FIPE: a busca manual é o caminho.
+  if (!dados.ano) return [];
 
   const marcas = await listarMarcas(tipo);
-  sugestao.marca = melhorCorrespondencia(dados.marca, marcas);
-  if (!sugestao.marca) return sugestao;
+  const marca = ordenarPorAderencia(dados.marca, marcas)[0];
+  if (!marca) return [];
 
-  const modelos = await listarModelos(tipo, sugestao.marca.codigo);
-  sugestao.modelo = melhorCorrespondencia(dados.modelo, modelos);
-  if (!sugestao.modelo || !dados.ano) return sugestao;
+  const modelos = await listarModelos(tipo, marca.codigo);
+  const compativeis = ordenarPorAderencia(dados.modelo, modelos).slice(0, MAX_CANDIDATOS);
+  if (compativeis.length === 0) return [];
 
-  const anos = await listarAnos(tipo, sugestao.marca.codigo, sugestao.modelo.codigo);
-  sugestao.ano = anos.find((a) => a.nome.startsWith(String(dados.ano)));
+  const candidatos = await Promise.all(
+    compativeis.map(async (modelo) => {
+      try {
+        const anos = await listarAnos(tipo, marca.codigo, modelo.codigo);
+        const ano = anos.find((a) => a.nome.startsWith(String(dados.ano)));
+        if (!ano) return null;
+        return await consultarPreco(tipo, marca.codigo, modelo.codigo, ano.codigo);
+      } catch {
+        // Uma versão que falhou não pode derrubar as demais.
+        return null;
+      }
+    }),
+  );
 
-  return sugestao;
+  return candidatos
+    .filter((c): c is FipeVeiculo => c !== null)
+    .map((c) => ({ ...c, placa: dados.placa }));
 }
 
 export async function consultarPlaca(
@@ -148,12 +166,11 @@ export async function consultarPlaca(
   const placa = normalizePlaca(placaBruta);
   const dados = await consultarProvedor(placa);
 
-  if (!dados) return { configurado: false };
+  if (!dados) return { configurado: false, candidatos: [] };
 
   try {
-    const sugestao = await sugerirFipe(dados, tipo);
-    return { configurado: true, dados, sugestao };
+    return { configurado: true, dados, candidatos: await montarCandidatos(dados, tipo) };
   } catch {
-    return { configurado: true, dados };
+    return { configurado: true, dados, candidatos: [] };
   }
 }

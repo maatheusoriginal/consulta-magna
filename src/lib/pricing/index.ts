@@ -3,7 +3,11 @@ import { EstimatedPricingProvider } from "./estimated-pricing-provider";
 import type { PricingProvider } from "./types";
 
 export { PRICING_CONFIG, type PricingConfig } from "./config";
-export { AVISO_REGRA_INFERIDA, EstimatedPricingProvider } from "./estimated-pricing-provider";
+export {
+  AVISO_REGRA_INFERIDA,
+  EstimatedPricingProvider,
+  REFERENCIAS,
+} from "./estimated-pricing-provider";
 export type {
   EntradaPrecificacao,
   ParticipacaoPrecificada,

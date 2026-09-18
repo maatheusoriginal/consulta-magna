@@ -59,7 +59,7 @@ const PASSOS = [
 const DUVIDAS = [
   {
     pergunta: "Qual a diferença entre adesão e participação?",
-    resposta: `A adesão é um valor único de filiação e ativação da proteção, a partir de ${formatBRL(PRICING_CONFIG.taxaAdesao)}. A participação é o valor pago apenas quando há um evento coberto, com piso mínimo contratual de ${formatBRL(PRICING_CONFIG.participacaoMinima)}.`,
+    resposta: `A adesão é um valor único de filiação e ativação da proteção, a partir de ${formatBRL(PRICING_CONFIG.taxaAdesaoMinima)}. A participação é o valor pago apenas quando há um evento coberto, com piso mínimo contratual de ${formatBRL(PRICING_CONFIG.participacaoMinima)}.`,
   },
   {
     pergunta: "De onde vem o valor FIPE mostrado na cotação?",
@@ -99,7 +99,7 @@ function precosDeVitrine(): Record<string, number | null> {
 export default function Home() {
   const precos = precosDeVitrine();
   const ouro = PLANOS.find((p) => p.id === "ouro")!;
-  const taxaAdesao = PRICING_CONFIG.taxaAdesao;
+  const taxaAdesaoMinima = PRICING_CONFIG.taxaAdesaoMinima;
   const participacaoMinima = PRICING_CONFIG.participacaoMinima;
 
   return (
@@ -113,7 +113,7 @@ export default function Home() {
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border border-border-subtle bg-bg-secondary px-3 py-1.5 text-xs font-semibold text-text-secondary">
                 <BadgeCheck size={14} strokeWidth={1.8} className="text-primary" aria-hidden />
-                Gratuito e sem compromisso
+                Consulta gratuita
               </span>
 
               <h1 className="mt-6 text-[34px] font-bold leading-[1.1] md:text-[52px]">
@@ -224,22 +224,14 @@ export default function Home() {
           </p>
 
           <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+            {/* Sem destaque de plano aqui: a recomendação só existe depois do
+                questionário de perfil, na cotação. */}
             {PLANOS.map((plano) => {
-              const recomendado = plano.id === "ouro";
               return (
                 <article
                   key={plano.id}
-                  className={`flex flex-col rounded-card-lg border bg-white p-6 ${
-                    recomendado
-                      ? "border-2 border-primary shadow-card-primary"
-                      : "border-border-subtle shadow-card"
-                  }`}
+                  className="flex flex-col rounded-card-lg border border-border-subtle bg-white p-6 shadow-card"
                 >
-                  {recomendado ? (
-                    <span className="mb-3 inline-flex w-fit items-center rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
-                      Mais escolhido
-                    </span>
-                  ) : null}
                   <p className="text-xl font-bold">{plano.nome}</p>
                   <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
                     {plano.subtitulo}
@@ -270,7 +262,7 @@ export default function Home() {
 
           <div className="mt-8">
             <Aviso titulo="Adesão e participação são coisas diferentes">
-              A taxa de adesão é única, a partir de {formatBRL(taxaAdesao)}. A participação só é
+              A taxa de adesão é única, a partir de {formatBRL(taxaAdesaoMinima)}. A participação só é
               paga quando houver um evento coberto e tem piso mínimo de{" "}
               {formatBRL(participacaoMinima)}.
             </Aviso>
@@ -306,10 +298,10 @@ export default function Home() {
         <section className="mx-auto max-w-wizard px-5 py-16 text-center">
           <ShieldCheck size={28} strokeWidth={1.6} className="mx-auto text-primary" aria-hidden />
           <h2 className="mt-4 text-[26px] font-bold leading-tight md:text-[34px]">
-            Faça sua cotação em menos de 2 minutos
+            Faça sua cotação agora
           </h2>
           <p className="mt-3 text-base text-text-secondary">
-            Sem cadastro para ver o preço. Sem ligações insistentes.
+            Sem cadastro para ver o preço.
           </p>
           <div className="mt-8 flex justify-center">
             <Link href="/cotacao" className="btn-primary max-w-sm">

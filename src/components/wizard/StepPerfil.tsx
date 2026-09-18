@@ -73,11 +73,11 @@ const PERGUNTAS = [
 ];
 
 export function StepPerfil() {
-  const { perfil, setPerfil, irPara } = useWizard();
+  const { perfil, finalidadeFixa, setPerfil, irPara } = useWizard();
   const [tentouAvancar, setTentouAvancar] = useState(false);
 
   const faltando = [
-    !perfil.finalidade && "finalidade",
+    !finalidadeFixa && !perfil.finalidade && "finalidade",
     ...PERGUNTAS.map((p) => (!perfil[p.campo] ? p.campo : null)),
   ].filter(Boolean);
 
@@ -99,6 +99,8 @@ export function StepPerfil() {
         </p>
       </header>
 
+      {/* Moto não roda em aplicativo/táxi: a pergunta não é exibida. */}
+      {finalidadeFixa ? null : (
       <section>
         <h2 className="mb-3 text-base font-semibold">Finalidade principal</h2>
         <div role="radiogroup" aria-label="Finalidade principal" className="grid gap-3 sm:grid-cols-2">
@@ -124,6 +126,7 @@ export function StepPerfil() {
           })}
         </div>
       </section>
+      )}
 
       <section className="space-y-6">
         <div className="flex items-baseline justify-between">

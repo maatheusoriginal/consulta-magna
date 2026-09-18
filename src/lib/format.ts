@@ -83,3 +83,12 @@ export function titleCase(texto: string): string {
 export function limparMarca(marca: string): string {
   return marca.replace(/^[A-Za-z]{2,4}\s*-\s*/, "").trim();
 }
+
+/**
+ * Percentual de participação para exibição: "12%", "12,5%", "10%".
+ *
+ * Nunca arredonda para inteiro — a moto usa 12,5% e mostrar "13%" seria errado.
+ */
+export function formatPercentual(fracao: number): string {
+  return `${(fracao * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+}

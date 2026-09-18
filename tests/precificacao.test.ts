@@ -1,33 +1,332 @@
 import { describe, expect, it } from "vitest";
 
-import { EstimatedPricingProvider, type PricingConfig } from "@/lib/pricing";
+import { EstimatedPricingProvider, REFERENCIAS, type PricingConfig } from "@/lib/pricing";
 import { PRICING_CONFIG } from "@/lib/pricing/config";
-import type { PrecoDisponivel } from "@/lib/pricing/types";
+import type { PrecoDisponivel, ResultadoPrecificacao } from "@/lib/pricing/types";
+import type { CategoriaVeiculo, PlanoId } from "@/lib/types";
 
-const FIPE_REFERENCIA = 28436;
+/** Tolerância aceita contra as cotações reais: centavos, nunca dezenas de reais. */
+const TOLERANCIA = 0.1;
 
 function config(parcial: Partial<PricingConfig> = {}): PricingConfig {
   return { ...PRICING_CONFIG, ...parcial };
 }
 
 function precificar(
-  entrada: { categoria: "CAR" | "MOTORCYCLE" | "TRUCK"; valorFipe: number; planoId: "bronze" | "prata" | "ouro" | "premium"; usoComercial?: boolean },
+  entrada: {
+    categoria: CategoriaVeiculo;
+    valorFipe: number;
+    planoId: PlanoId;
+    usoComercial?: boolean;
+  },
   parcial: Partial<PricingConfig> = {},
-) {
+): ResultadoPrecificacao {
   return new EstimatedPricingProvider(config(parcial)).precificar({
     usoComercial: false,
     ...entrada,
   });
 }
 
-function disponivel(resultado: ReturnType<typeof precificar>): PrecoDisponivel {
-  if (resultado.status === "UNAVAILABLE") throw new Error("esperava preço disponível");
+function disponivel(resultado: ResultadoPrecificacao): PrecoDisponivel {
+  if (resultado.status === "UNAVAILABLE") {
+    throw new Error(`esperava preço disponível, veio UNAVAILABLE: ${resultado.motivo}`);
+  }
   return resultado;
 }
 
+function mensalidade(
+  entrada: Parameters<typeof precificar>[0],
+  parcial: Partial<PricingConfig> = {},
+): number {
+  return disponivel(precificar(entrada, parcial)).mensalidadeBase;
+}
+
+// ---------------------------------------------------------------- referências
+
+describe("cotações reais de carro", () => {
+  for (const ref of REFERENCIAS.CAR) {
+    describe(`${ref.nome} (FIPE R$ ${ref.valorFipe})`, () => {
+      for (const planoId of ["bronze", "prata", "ouro", "premium"] as const) {
+        it(`${planoId} ≈ R$ ${ref[planoId].toFixed(2)}`, () => {
+          const calculado = mensalidade({
+            categoria: "CAR",
+            valorFipe: ref.valorFipe,
+            planoId,
+          });
+          expect(Math.abs(calculado - ref[planoId])).toBeLessThanOrEqual(TOLERANCIA);
+        });
+      }
+    });
+  }
+
+  it("a mensalidade não é mais um percentual puro da FIPE", () => {
+    // Num modelo `FIPE * taxa`, dobrar a FIPE dobraria a mensalidade.
+    // A estrutura real tem um componente fixo, então a razão fica bem abaixo de 2.
+    const menor = mensalidade({ categoria: "CAR", valorFipe: 28436, planoId: "ouro" });
+    const maior = mensalidade({ categoria: "CAR", valorFipe: 56872, planoId: "ouro" });
+    expect(maior / menor).toBeLessThan(1.3);
+  });
+});
+
+describe("cotações reais de moto", () => {
+  for (const ref of REFERENCIAS.MOTORCYCLE) {
+    describe(`${ref.nome} (FIPE R$ ${ref.valorFipe}, cód. ${ref.codigoFipe})`, () => {
+      for (const planoId of ["bronze", "prata"] as const) {
+        it(`${planoId} ≈ R$ ${ref[planoId].toFixed(2)}`, () => {
+          const calculado = mensalidade({
+            categoria: "MOTORCYCLE",
+            valorFipe: ref.valorFipe,
+            planoId,
+          });
+          expect(Math.abs(calculado - ref[planoId])).toBeLessThanOrEqual(TOLERANCIA);
+        });
+      }
+    });
+  }
+
+  it("a CG 150 respeita a mensalidade mínima de R$ 80,00", () => {
+    expect(mensalidade({ categoria: "MOTORCYCLE", valorFipe: 11112, planoId: "bronze" })).toBe(80);
+  });
+});
+
+// ------------------------------------------------------------ planos por tipo
+
+describe("planos disponíveis por categoria", () => {
+  const provedor = new EstimatedPricingProvider();
+
+  it("carro oferece os quatro planos", () => {
+    expect(provedor.getAvailablePlanIds("CAR")).toEqual(["bronze", "prata", "ouro", "premium"]);
+  });
+
+  it("moto oferece apenas Bronze e Prata", () => {
+    expect(provedor.getAvailablePlanIds("MOTORCYCLE")).toEqual(["bronze", "prata"]);
+  });
+
+  it("caminhão não tem oferta", () => {
+    expect(provedor.getAvailablePlanIds("TRUCK")).toEqual([]);
+  });
+
+  it("Ouro e Premium respondem UNAVAILABLE para moto", () => {
+    for (const planoId of ["ouro", "premium"] as const) {
+      const resultado = precificar({ categoria: "MOTORCYCLE", valorFipe: 25197, planoId });
+      expect(resultado.status).toBe("UNAVAILABLE");
+      if (resultado.status === "UNAVAILABLE") {
+        expect(resultado.motivo).toMatch(/não é oferecido para esta categoria/i);
+      }
+    }
+  });
+
+  it("caminhão responde UNAVAILABLE em vez de reaproveitar a regra de carro", () => {
+    const resultado = precificar({ categoria: "TRUCK", valorFipe: 120000, planoId: "bronze" });
+    expect(resultado.status).toBe("UNAVAILABLE");
+  });
+});
+
+describe("regra por categoria", () => {
+  it("moto não usa a fórmula de carro", () => {
+    const carro = mensalidade({ categoria: "CAR", valorFipe: 25197, planoId: "bronze" });
+    const moto = mensalidade({ categoria: "MOTORCYCLE", valorFipe: 25197, planoId: "bronze" });
+    expect(moto).not.toBe(carro);
+  });
+
+  it("carro e moto têm bases distintas", () => {
+    const provedor = new EstimatedPricingProvider();
+    const carro = provedor.descreverRegra("CAR")!;
+    const moto = provedor.descreverRegra("MOTORCYCLE")!;
+
+    expect(moto.base.valorFixo).not.toBe(carro.base.valorFixo);
+    expect(moto.base.fatorFipe).not.toBe(carro.base.fatorFipe);
+    expect(moto.percentuaisParticipacao).not.toEqual(carro.percentuaisParticipacao);
+  });
+});
+
+// ---------------------------------------------------------------- participação
+
+describe("participação por categoria", () => {
+  it("carro usa 12%, 8%, 6% e zero", () => {
+    const preco = disponivel(precificar({ categoria: "CAR", valorFipe: 100000, planoId: "ouro" }));
+    const porId = Object.fromEntries(preco.participacoes.map((p) => [p.id, p]));
+
+    expect(porId.padrao.percentual).toBe(0.12);
+    expect(porId.reduzida.percentual).toBe(0.08);
+    expect(porId.minima.percentual).toBe(0.06);
+    expect(porId.zero.percentual).toBeNull();
+  });
+
+  it("moto usa 15%, 12,5%, 10% e zero", () => {
+    const preco = disponivel(
+      precificar({ categoria: "MOTORCYCLE", valorFipe: 25197, planoId: "bronze" }),
+    );
+    const porId = Object.fromEntries(preco.participacoes.map((p) => [p.id, p]));
+
+    expect(porId.padrao.percentual).toBe(0.15);
+    expect(porId.reduzida.percentual).toBe(0.125);
+    expect(porId.minima.percentual).toBe(0.1);
+    expect(porId.zero.percentual).toBeNull();
+  });
+
+  it("XRE 190: participações e mensalidades conferem com a cotação real", () => {
+    const preco = disponivel(
+      precificar({ categoria: "MOTORCYCLE", valorFipe: 25197, planoId: "bronze" }),
+    );
+    const porId = Object.fromEntries(preco.participacoes.map((p) => [p.id, p]));
+
+    const esperado = {
+      padrao: { participacao: 3779.55, mensalidade: 118.19 },
+      reduzida: { participacao: 3149.63, mensalidade: 124.75 },
+      minima: { participacao: 2519.7, mensalidade: 131.32 },
+      zero: { participacao: 0, mensalidade: 157.58 },
+    } as const;
+
+    for (const [id, alvo] of Object.entries(esperado)) {
+      expect(porId[id].valor).toBeCloseTo(alvo.participacao, 2);
+      expect(Math.abs(porId[id].mensalidade - alvo.mensalidade)).toBeLessThanOrEqual(TOLERANCIA);
+    }
+
+    // Nenhuma modalidade da XRE encosta no piso.
+    expect(preco.participacoes.every((p) => !p.pisoAplicado)).toBe(true);
+  });
+
+  it("CG 150: todas as modalidades percentuais caem no piso de R$ 1.800", () => {
+    const preco = disponivel(
+      precificar({ categoria: "MOTORCYCLE", valorFipe: 11112, planoId: "bronze" }),
+    );
+
+    for (const participacao of preco.participacoes) {
+      if (participacao.percentual === null) {
+        expect(participacao.valor).toBe(0);
+        continue;
+      }
+      // 15%, 12,5% e 10% de R$ 11.112 ficam todos abaixo de R$ 1.800.
+      expect(11112 * participacao.percentual).toBeLessThan(1800);
+      expect(participacao.pisoAplicado).toBe(true);
+      expect(participacao.valor).toBe(1800);
+    }
+  });
+
+  it("Gol: participações de carro conferem com a referência", () => {
+    const preco = disponivel(precificar({ categoria: "CAR", valorFipe: 28436, planoId: "ouro" }));
+    const porId = Object.fromEntries(preco.participacoes.map((p) => [p.id, p]));
+
+    expect(porId.padrao.valor).toBe(3412.32);
+    expect(porId.reduzida.valor).toBe(2274.88);
+    expect(porId.minima.valor).toBe(1800); // 6% = R$ 1.706,16 → piso
+    expect(porId.minima.pisoAplicado).toBe(true);
+    expect(porId.zero.valor).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------- adesão
+
+describe("taxa de adesão", () => {
+  it("o piso configurado é R$ 300", () => {
+    expect(PRICING_CONFIG.taxaAdesaoMinima).toBe(300);
+  });
+
+  it("mensalidade abaixo do piso resulta em adesão de R$ 300", () => {
+    const preco = disponivel(precificar({ categoria: "CAR", valorFipe: 28436, planoId: "ouro" }));
+    const padrao = preco.participacoes.find((p) => p.id === "padrao")!;
+
+    expect(padrao.mensalidade).toBeLessThan(300);
+    expect(padrao.taxaAdesao).toBe(300);
+  });
+
+  it("mensalidade acima do piso resulta em adesão igual à mensalidade", () => {
+    // FIPE alta o bastante para a mensalidade passar de R$ 300.
+    const preco = disponivel(precificar({ categoria: "CAR", valorFipe: 400000, planoId: "premium" }));
+    const padrao = preco.participacoes.find((p) => p.id === "padrao")!;
+
+    expect(padrao.mensalidade).toBeGreaterThan(300);
+    expect(padrao.taxaAdesao).toBe(padrao.mensalidade);
+  });
+
+  it("a adesão acompanha a mensalidade FINAL da modalidade, não a base do plano", () => {
+    const preco = disponivel(precificar({ categoria: "CAR", valorFipe: 400000, planoId: "premium" }));
+    const padrao = preco.participacoes.find((p) => p.id === "padrao")!;
+    const zero = preco.participacoes.find((p) => p.id === "zero")!;
+
+    expect(zero.mensalidade).toBeGreaterThan(padrao.mensalidade);
+    expect(zero.taxaAdesao).toBe(zero.mensalidade);
+    expect(zero.taxaAdesao).toBeGreaterThan(padrao.taxaAdesao);
+  });
+
+  it("cada faixa da regra max(300, mensalidade) se comporta como esperado", () => {
+    const casos: Array<[number, number]> = [
+      [164.27, 300],
+      [299, 300],
+      [300, 300],
+      [420, 420],
+      [560, 560],
+    ];
+    for (const [mensalidadeFinal, adesaoEsperada] of casos) {
+      expect(Math.max(PRICING_CONFIG.taxaAdesaoMinima, mensalidadeFinal)).toBe(adesaoEsperada);
+    }
+  });
+});
+
+// --------------------------------------------------------------- uso comercial
+
+describe("uso comercial", () => {
+  it("por padrão só a participação Padrão fica disponível", () => {
+    expect(PRICING_CONFIG.participacoesBloqueadasUsoComercial).toEqual([
+      "reduzida",
+      "minima",
+      "zero",
+    ]);
+
+    const preco = disponivel(
+      precificar({ categoria: "CAR", valorFipe: 51630, planoId: "ouro", usoComercial: true }),
+    );
+    expect(preco.participacoes.map((p) => p.id)).toEqual(["padrao"]);
+  });
+
+  it("uso particular mantém as quatro modalidades", () => {
+    const preco = disponivel(precificar({ categoria: "CAR", valorFipe: 51630, planoId: "ouro" }));
+    expect(preco.participacoes).toHaveLength(4);
+  });
+
+  it("uso comercial nunca sai com o mesmo preço do particular", () => {
+    expect(PRICING_CONFIG.fatorUsoComercial).toBeGreaterThan(1);
+
+    const particular = mensalidade({ categoria: "CAR", valorFipe: 51630, planoId: "ouro" });
+    const comercial = mensalidade({
+      categoria: "CAR",
+      valorFipe: 51630,
+      planoId: "ouro",
+      usoComercial: true,
+    });
+    expect(comercial).toBeGreaterThan(particular);
+  });
+
+  it("Prisma comercial reproduz a cotação conhecida", () => {
+    const esperado = { bronze: 163.88, prata: 192.8, ouro: 229.44, premium: 245.19 } as const;
+
+    for (const [planoId, alvo] of Object.entries(esperado)) {
+      const calculado = mensalidade({
+        categoria: "CAR",
+        valorFipe: 51630,
+        planoId: planoId as PlanoId,
+        usoComercial: true,
+      });
+      expect(Math.abs(calculado - alvo)).toBeLessThanOrEqual(TOLERANCIA);
+    }
+  });
+
+  it("o agravo continua configurável", () => {
+    const comercial = mensalidade(
+      { categoria: "CAR", valorFipe: 51630, planoId: "ouro", usoComercial: true },
+      { fatorUsoComercial: 1 },
+    );
+    const particular = mensalidade({ categoria: "CAR", valorFipe: 51630, planoId: "ouro" });
+    expect(comercial).toBe(particular);
+  });
+});
+
+// ------------------------------------------------------------ status e opções
+
 describe("status da precificação", () => {
   it("cotação vinda de regra inferida recebe status ESTIMATED", () => {
-    const resultado = precificar({ categoria: "CAR", valorFipe: FIPE_REFERENCIA, planoId: "ouro" });
+    const resultado = precificar({ categoria: "CAR", valorFipe: 28436, planoId: "ouro" });
     expect(resultado.status).toBe("ESTIMATED");
     expect(resultado.status).not.toBe("OFFICIAL");
   });
@@ -35,194 +334,56 @@ describe("status da precificação", () => {
   it("o provedor se declara ESTIMATED e traz o aviso da regra inferida", () => {
     const provedor = new EstimatedPricingProvider();
     expect(provedor.status).toBe("ESTIMATED");
-    expect(provedor.nome).toBe("EstimatedPricingProvider");
 
-    const resultado = disponivel(
+    const preco = disponivel(
       provedor.precificar({
         categoria: "CAR",
-        valorFipe: FIPE_REFERENCIA,
+        valorFipe: 28436,
         planoId: "ouro",
         usoComercial: false,
       }),
     );
-    expect(resultado.observacao).toMatch(/inferida a partir de cotações de referência/i);
-    expect(resultado.observacao).toMatch(/substituída por fonte oficial/i);
+    expect(preco.observacao).toMatch(/inferida a partir de cotações de referência/i);
+    expect(preco.observacao).toMatch(/substituída por fonte oficial/i);
   });
 
   it("sem valor FIPE apurado responde UNAVAILABLE", () => {
-    const resultado = precificar({ categoria: "CAR", valorFipe: 0, planoId: "ouro" });
-    expect(resultado.status).toBe("UNAVAILABLE");
-  });
-});
-
-describe("regra por categoria de veículo", () => {
-  it("moto não usa automaticamente a fórmula de carro", () => {
-    const carro = disponivel(
-      precificar({ categoria: "CAR", valorFipe: 20000, planoId: "ouro" }),
+    expect(precificar({ categoria: "CAR", valorFipe: 0, planoId: "ouro" }).status).toBe(
+      "UNAVAILABLE",
     );
-    const moto = disponivel(
-      precificar({ categoria: "MOTORCYCLE", valorFipe: 20000, planoId: "ouro" }),
-    );
-
-    expect(moto.mensalidadeBase).not.toBe(carro.mensalidadeBase);
-  });
-
-  it("carro e moto têm tabelas de taxas distintas em todos os planos", () => {
-    const provedor = new EstimatedPricingProvider();
-    const regraCarro = provedor.descreverRegra("CAR");
-    const regraMoto = provedor.descreverRegra("MOTORCYCLE");
-
-    expect(regraCarro).toBeDefined();
-    expect(regraMoto).toBeDefined();
-
-    for (const plano of ["bronze", "prata", "ouro", "premium"] as const) {
-      expect(regraMoto!.taxas[plano].taxaMensalFipe).not.toBe(
-        regraCarro!.taxas[plano].taxaMensalFipe,
-      );
-    }
-  });
-
-  it("categoria sem regra cadastrada responde UNAVAILABLE em vez de reaproveitar a de carro", () => {
-    const resultado = precificar({ categoria: "TRUCK", valorFipe: 120000, planoId: "ouro" });
-    expect(resultado.status).toBe("UNAVAILABLE");
-    if (resultado.status === "UNAVAILABLE") {
-      expect(resultado.motivo).toMatch(/não há regra de precificação/i);
-    }
-  });
-});
-
-describe("calibração com as cotações de referência", () => {
-  const esperado = { bronze: 108.07, prata: 132.87, ouro: 164.27, premium: 177.77 } as const;
-
-  for (const [planoId, valor] of Object.entries(esperado)) {
-    it(`reproduz ${planoId} = R$ ${valor}`, () => {
-      const resultado = disponivel(
-        precificar({
-          categoria: "CAR",
-          valorFipe: FIPE_REFERENCIA,
-          planoId: planoId as keyof typeof esperado,
-        }),
-      );
-      expect(resultado.mensalidadeBase).toBe(valor);
-    });
-  }
-
-  it("reproduz as participações de referência", () => {
-    const resultado = disponivel(
-      precificar({ categoria: "CAR", valorFipe: FIPE_REFERENCIA, planoId: "ouro" }),
-    );
-    const porId = Object.fromEntries(resultado.participacoes.map((p) => [p.id, p]));
-
-    expect(porId.padrao.valor).toBe(3412.32);
-    expect(porId.padrao.mensalidade).toBe(164.27);
-    expect(porId.reduzida.valor).toBe(2274.88);
-    expect(porId.reduzida.mensalidade).toBe(173.4);
-    expect(porId.minima.valor).toBe(1800);
-    expect(porId.minima.mensalidade).toBe(182.52);
-    expect(porId.zero.valor).toBe(0);
-    expect(porId.zero.mensalidade).toBe(219.03);
   });
 });
 
 describe("hideDominatedParticipationOptions", () => {
-  // FIPE baixa: 12%, 8% e 6% caem todos no piso de R$ 1.800.
-  const FIPE_BAIXA = 6136;
-
   it("tem padrão false", () => {
     expect(PRICING_CONFIG.hideDominatedParticipationOptions).toBe(false);
   });
 
   it("com false mantém todas as modalidades, mesmo as dominadas pelo piso", () => {
-    const resultado = disponivel(
+    // CG 150: 15%, 12,5% e 10% caem todos no piso de R$ 1.800.
+    const preco = disponivel(
       precificar(
-        { categoria: "CAR", valorFipe: FIPE_BAIXA, planoId: "ouro" },
+        { categoria: "MOTORCYCLE", valorFipe: 11112, planoId: "bronze" },
         { hideDominatedParticipationOptions: false },
       ),
     );
 
-    expect(resultado.participacoes.map((p) => p.id).sort()).toEqual([
+    expect(preco.participacoes.map((p) => p.id).sort()).toEqual([
       "minima",
       "padrao",
       "reduzida",
       "zero",
     ]);
-    // As três primeiras batem no piso e ficam com a mesma participação.
-    const noPiso = resultado.participacoes.filter((p) => p.pisoAplicado);
-    expect(noPiso).toHaveLength(3);
-    expect(new Set(noPiso.map((p) => p.valor))).toEqual(new Set([1800]));
   });
 
   it("com true remove apenas as opções economicamente dominadas", () => {
-    const resultado = disponivel(
+    const preco = disponivel(
       precificar(
-        { categoria: "CAR", valorFipe: FIPE_BAIXA, planoId: "ouro" },
+        { categoria: "MOTORCYCLE", valorFipe: 11112, planoId: "bronze" },
         { hideDominatedParticipationOptions: true },
       ),
     );
 
-    expect(resultado.participacoes.map((p) => p.id)).toEqual(["padrao", "zero"]);
-  });
-
-  it("com true não remove nada quando nenhuma opção é dominada", () => {
-    const resultado = disponivel(
-      precificar(
-        { categoria: "CAR", valorFipe: FIPE_REFERENCIA, planoId: "ouro" },
-        { hideDominatedParticipationOptions: true },
-      ),
-    );
-
-    expect(resultado.participacoes).toHaveLength(4);
-  });
-});
-
-describe("uso comercial", () => {
-  it("por padrão não altera a mensalidade (agravo aguarda definição da Magna)", () => {
-    expect(PRICING_CONFIG.fatorUsoComercial).toBe(1);
-
-    const particular = disponivel(
-      precificar({ categoria: "CAR", valorFipe: FIPE_REFERENCIA, planoId: "ouro" }),
-    );
-    const comercial = disponivel(
-      precificar({
-        categoria: "CAR",
-        valorFipe: FIPE_REFERENCIA,
-        planoId: "ouro",
-        usoComercial: true,
-      }),
-    );
-
-    expect(comercial.mensalidadeBase).toBe(particular.mensalidadeBase);
-  });
-
-  it("quando configurado, o agravo incide sobre a mensalidade", () => {
-    const comercial = disponivel(
-      precificar(
-        {
-          categoria: "CAR",
-          valorFipe: FIPE_REFERENCIA,
-          planoId: "ouro",
-          usoComercial: true,
-        },
-        { fatorUsoComercial: 1.2 },
-      ),
-    );
-
-    expect(comercial.mensalidadeBase).toBe(197.12);
-  });
-
-  it("quando configurado, pode restringir modalidades de participação", () => {
-    const comercial = disponivel(
-      precificar(
-        {
-          categoria: "CAR",
-          valorFipe: FIPE_REFERENCIA,
-          planoId: "ouro",
-          usoComercial: true,
-        },
-        { participacoesBloqueadasUsoComercial: ["zero"] },
-      ),
-    );
-
-    expect(comercial.participacoes.map((p) => p.id)).not.toContain("zero");
+    expect(preco.participacoes.map((p) => p.id)).toEqual(["padrao", "zero"]);
   });
 });

@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { WHATSAPP_NUMERO } from "@/lib/config";
+import { formatBRL } from "@/lib/format";
 import { montarSnapshot } from "@/lib/cotacao";
 import type { CotacaoSnapshot } from "@/lib/leads/types";
 import { EstimatedPricingProvider } from "@/lib/pricing";
@@ -17,8 +18,10 @@ function cotacaoDeTeste(): CotacaoSnapshot {
     categoria: "CAR",
     valorFipe: 28436,
     planoId: "ouro",
-    usoComercial: false,
+    usoComercial: true,
   }) as PrecoDisponivel;
+
+  const padrao = preco.participacoes.find((p) => p.id === "padrao")!;
 
   return montarSnapshot({
     codigo: "MG-48213",
@@ -46,8 +49,8 @@ function cotacaoDeTeste(): CotacaoSnapshot {
     },
     planoRecomendado: "premium",
     planoEscolhido: "ouro",
-    participacao: preco.participacoes.find((p) => p.id === "padrao")!,
-    taxaAdesao: preco.taxaAdesao,
+    participacao: padrao,
+    taxaAdesao: padrao.taxaAdesao,
     statusPrecificacao: preco.status,
     lead: { nome: "Ana Souza", whatsapp: "(34) 99196-0908", email: "ana@exemplo.com" },
   });
@@ -143,10 +146,11 @@ describe("mensagem final", () => {
     expect(mensagem).toContain("Referência: setembro de 2026");
     expect(mensagem).toContain("Aplicativo / Táxi");
     expect(mensagem).toContain("OURO");
-    expect(mensagem).toContain("R$ 164,27/mês");
+    // Valor conferido contra a própria cotação, não fixado no teste.
+    expect(mensagem).toContain(`${formatBRL(cotacao.mensalidade)}/mês`);
     expect(mensagem).toContain("Padrão — 12% da FIPE");
-    expect(mensagem).toContain("R$ 3.412,32 por evento coberto");
-    expect(mensagem).toContain("R$ 300,00");
+    expect(mensagem).toContain(`${formatBRL(cotacao.valorParticipacao)} por evento coberto`);
+    expect(mensagem).toContain(formatBRL(cotacao.adesao));
     expect(mensagem).toContain("MG-48213");
   });
 

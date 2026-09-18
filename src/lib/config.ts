@@ -15,7 +15,8 @@ export const WHATSAPP_NUMERO = (
 export const MARCA = {
   nome: "Magna",
   nomeCompleto: "Magna Proteção Automotiva",
-  descricao: "Proteção veicular com assistência rápida, transparência e segurança.",
+  descricao:
+    "Proteção veicular com transparência nas coberturas, participações e carências.",
 };
 
 /** Texto exibido enquanto a mensalidade vier de regra inferida. */

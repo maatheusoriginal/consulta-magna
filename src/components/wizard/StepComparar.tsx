@@ -7,7 +7,7 @@ import { Preco } from "@/components/Preco";
 import { VeiculoResumo } from "@/components/VeiculoResumo";
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { formatBRL } from "@/lib/format";
-import { ITENS_COMPARACAO, PLANOS } from "@/lib/planos";
+import { ITENS_COMPARACAO } from "@/lib/planos";
 import type { CoberturaItem, PlanoId } from "@/lib/types";
 import { useWizard } from "@/lib/wizard";
 
@@ -39,13 +39,14 @@ function ValorCobertura({ item }: { item: CoberturaItem | undefined }) {
 }
 
 export function StepComparar() {
-  const { veiculo, recomendado, planoSelecionado, precosPorPlano, setPlano, irPara } = useWizard();
+  const { veiculo, recomendado, planoSelecionado, planosOfertados, precosPorPlano, setPlano, irPara } =
+    useWizard();
   const [aba, setAba] = useState<PlanoId>(planoSelecionado?.id ?? "ouro");
 
-  if (!veiculo || !planoSelecionado) return null;
+  if (!veiculo || !planoSelecionado || planosOfertados.length === 0) return null;
 
   const idRecomendado = recomendado?.plano.id;
-  const planoAba = PLANOS.find((p) => p.id === aba)!;
+  const planoAba = planosOfertados.find((p) => p.id === aba) ?? planosOfertados[0];
 
   function escolher(id: PlanoId) {
     setPlano(id);
@@ -72,7 +73,7 @@ export function StepComparar() {
           aria-label="Planos"
           className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-2"
         >
-          {PLANOS.map((plano) => (
+          {planosOfertados.map((plano) => (
             <button
               key={plano.id}
               role="tab"
@@ -151,7 +152,7 @@ export function StepComparar() {
                 <th scope="col" className="w-[26%] p-4 text-sm font-semibold">
                   Cobertura
                 </th>
-                {PLANOS.map((plano) => (
+                {planosOfertados.map((plano) => (
                   <th
                     key={plano.id}
                     scope="col"
@@ -180,7 +181,7 @@ export function StepComparar() {
                   <th scope="row" className="p-4 text-sm font-medium text-text-secondary">
                     {rotulo}
                   </th>
-                  {PLANOS.map((plano) => (
+                  {planosOfertados.map((plano) => (
                     <td
                       key={plano.id}
                       className={`p-4 ${plano.id === idRecomendado ? "bg-red-subtle/50" : ""}`}
@@ -192,7 +193,7 @@ export function StepComparar() {
               ))}
               <tr>
                 <td className="p-4" />
-                {PLANOS.map((plano) => (
+                {planosOfertados.map((plano) => (
                   <td key={plano.id} className="p-4 align-top">
                     <button
                       type="button"

@@ -10,9 +10,24 @@ gratuitas — nenhuma chave de API é necessária para o site funcionar.
 
 > **Aviso de precificação.** A mensalidade **não** vem da FIPE nem de uma tabela
 > oficial da Magna. Ela é calculada por uma regra inferida a partir de cotações
-> de referência, e por isso toda cotação sai com status `ESTIMATED` e a interface
-> avisa: _"Simulação estimada. Valores sujeitos à confirmação."_
-> Detalhes e caminho de migração em [`docs/PRECIFICACAO.md`](docs/PRECIFICACAO.md).
+> reais de referência (três de carro e duas de moto), e por isso toda cotação sai
+> com status `ESTIMATED` e a interface avisa:
+> _"Simulação estimada. Valores sujeitos à confirmação."_
+> Fórmulas, cotações de referência, planos por categoria e caminho de migração em
+> [`docs/PRECIFICACAO.md`](docs/PRECIFICACAO.md).
+
+### Resumo das regras de negócio
+
+- Mensalidade = base linear na FIPE + adicional fixo por plano (fórmula distinta
+  para carro e para moto).
+- Planos por categoria: carro tem os quatro; **moto só tem Bronze e Prata**;
+  caminhão não tem oferta e cai em `UNAVAILABLE`.
+- Participação: carro 12% / 8% / 6% / zero; **moto 15% / 12,5% / 10% / zero**;
+  piso contratual de R$ 1.800,00 nas duas.
+- Adesão = `max(R$ 300, mensalidade da modalidade escolhida)`.
+- Carro de aplicativo/táxi: agravo na mensalidade e **somente a participação
+  Padrão** disponível. Moto não é perguntada sobre aplicativo/táxi.
+- Bronze **não** cobre incêndio/fenômenos da natureza nem colisão.
 
 ## Stack
 
@@ -49,18 +64,26 @@ Todas as variáveis estão documentadas em `.env.example`.
 | `LEAD_WEBHOOK_URL` | **sim, em produção** | — |
 | `FIPE_API_URL` | não | Parallelum |
 | `PLACA_API_TOKEN` / `PLACA_API_URL` | não | — |
-| `NEXT_PUBLIC_TAXA_ADESAO` | não | `300` |
+| `NEXT_PUBLIC_TAXA_ADESAO_MINIMA` | não | `300` |
 | `NEXT_PUBLIC_PARTICIPACAO_MINIMA` | não | `1800` |
 | `NEXT_PUBLIC_HIDE_DOMINATED_PARTICIPATION_OPTIONS` | não | `false` |
-| `NEXT_PUBLIC_FATOR_USO_COMERCIAL` | não | `1` |
-| `NEXT_PUBLIC_PARTICIPACOES_BLOQUEADAS_USO_COMERCIAL` | não | vazio |
+| `NEXT_PUBLIC_FATOR_USO_COMERCIAL` | não | `1.1666667` |
+| `NEXT_PUBLIC_PARTICIPACOES_BLOQUEADAS_USO_COMERCIAL` | não | `reduzida,minima,zero` |
 
 ### Tabela FIPE (grátis, sem chave)
 
-| Fonte | Uso |
-| --- | --- |
-| [Parallelum FIPE API](https://deividfortuna.github.io/fipe/) | fonte primária de marcas, modelos, anos e valor |
-| [BrasilAPI](https://brasilapi.com.br/docs#tag/FIPE) | contingência automática para marcas e modelos |
+| Consulta | Fonte primária | Contingência |
+| --- | --- | --- |
+| Marcas | Parallelum | BrasilAPI |
+| Modelos | Parallelum | BrasilAPI |
+| Anos | Parallelum | **nenhuma** |
+| Valor FIPE | Parallelum | **nenhuma** |
+
+A contingência da [BrasilAPI](https://brasilapi.com.br/docs#tag/FIPE) cobre
+**apenas marcas e modelos**. Anos e valor FIPE dependem exclusivamente da
+[Parallelum](https://deividfortuna.github.io/fipe/): se ela falhar nessas duas
+consultas, a interface mostra um erro e permite tentar de novo. Não há
+contingência total da FIPE.
 
 As respostas ficam em cache por 6 horas na memória do processo e por 24 horas no
 cache de dados do Next, já que a tabela FIPE muda uma vez por mês.
@@ -89,8 +112,12 @@ opcionais:
 
 **Sem nenhuma dessas variáveis o site continua funcional**: ao consultar uma
 placa, a interface avisa e leva o usuário para a busca por marca/modelo/ano, que
-usa apenas a API gratuita da FIPE. Com um provedor configurado, os dados da placa
-são casados automaticamente com os códigos da FIPE.
+usa apenas a API gratuita da FIPE.
+
+Com um provedor configurado, a correspondência entre o texto devolvido pela placa
+e as versões da FIPE é **aproximada**, então a aplicação **nunca escolhe a versão
+sozinha**: ela lista as versões compatíveis — com modelo, ano, combustível,
+código e valor FIPE — e o usuário confirma qual é a sua.
 
 ### Persistência de leads
 

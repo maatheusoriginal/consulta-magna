@@ -30,6 +30,11 @@ export interface ParticipacaoPrecificada {
   pisoAplicado: boolean;
   /** Mensalidade resultante desta modalidade. */
   mensalidade: number;
+  /**
+   * Taxa de adesão desta modalidade: `max(adesaoMinima, mensalidade)`.
+   * A adesão acompanha a mensalidade FINAL da modalidade, não a mensalidade base.
+   */
+  taxaAdesao: number;
   carenciaDias?: number;
 }
 
@@ -50,8 +55,8 @@ export interface PrecoDisponivel {
   mensalidadeBase: number;
   /** Modalidades de participação oferecidas para este veículo e plano. */
   participacoes: ParticipacaoPrecificada[];
-  /** Valor único de filiação e ativação da proteção. */
-  taxaAdesao: number;
+  /** Piso da taxa de adesão. A adesão efetiva está em cada modalidade. */
+  taxaAdesaoMinima: number;
 }
 
 export type ResultadoPrecificacao = PrecoDisponivel | PrecoIndisponivel;
@@ -65,5 +70,7 @@ export type ResultadoPrecificacao = PrecoDisponivel | PrecoIndisponivel;
 export interface PricingProvider {
   readonly nome: string;
   readonly status: PricingStatus;
+  /** Planos comercializados para a categoria. Vazio quando não há oferta. */
+  getAvailablePlanIds(categoria: CategoriaVeiculo): PlanoId[];
   precificar(entrada: EntradaPrecificacao): ResultadoPrecificacao;
 }
