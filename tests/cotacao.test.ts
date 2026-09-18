@@ -59,11 +59,13 @@ function snapshot(overrides: { veiculo?: FipeVeiculo; perfil?: PerfilRespostas; 
     placa: overrides.placa ?? "abc-1d23",
     veiculo,
     perfil: overrides.perfil ?? PERFIL,
-    planoRecomendado: "bronze",
-    planoEscolhido: "bronze",
-    participacao: part,
-    taxaAdesao: part.taxaAdesao,
-    statusPrecificacao: "ESTIMATED",
+    precificacao: {
+      status: "ESTIMATED",
+      planoRecomendado: "bronze",
+      planoEscolhido: "bronze",
+      participacao: part,
+      taxaAdesao: part.taxaAdesao,
+    },
     lead: { nome: "Ana Souza", whatsapp: "(34) 99196-0908" },
   });
 }
@@ -112,11 +114,13 @@ describe("placa no snapshot", () => {
       placa: "XYZ9K88",
       veiculo: { ...CARRO, placa: "BRA2E19" },
       perfil: PERFIL,
-      planoRecomendado: "bronze",
-      planoEscolhido: "bronze",
-      participacao: participacao(CARRO),
-      taxaAdesao: 300,
-      statusPrecificacao: "ESTIMATED",
+      precificacao: {
+        status: "ESTIMATED",
+        planoRecomendado: "bronze",
+        planoEscolhido: "bronze",
+        participacao: participacao(CARRO),
+        taxaAdesao: 300,
+      },
       lead: { nome: "Ana Souza", whatsapp: "34991960908" },
     });
 
@@ -154,5 +158,78 @@ describe("uso declarado", () => {
 
     expect(s.usoDeclarado).toBeNull();
     expect(s.usoParaPrecificacao).toBe("STANDARD");
+  });
+});
+
+describe("cotação sem precificação (UNAVAILABLE)", () => {
+  const CAMINHAO: FipeVeiculo = {
+    ...CARRO,
+    tipo: "caminhoes",
+    marca: "Agrale",
+    modelo: "10000 / 10000 S 2p (diesel)",
+    combustivel: "Diesel",
+    codigoFipe: "501001-0",
+    valor: 239584,
+  };
+
+  function semPreco() {
+    return montarSnapshot({
+      simulationId: gerarSimulationId(),
+      codigo: gerarCodigoSimulacao(),
+      placa: "abc-1d23",
+      veiculo: CAMINHAO,
+      perfil: null,
+      precificacao: null,
+      lead: { nome: "Ana Souza", whatsapp: "34991960908" },
+    });
+  }
+
+  it("marca statusPrecificacao como UNAVAILABLE", () => {
+    expect(semPreco().statusPrecificacao).toBe("UNAVAILABLE");
+  });
+
+  it("não inventa R$ 0 como se fosse preço", () => {
+    const s = semPreco();
+
+    expect(s.planoRecomendado).toBeNull();
+    expect(s.planoEscolhido).toBeNull();
+    expect(s.mensalidade).toBeNull();
+    expect(s.modalidadeParticipacao).toBeNull();
+    expect(s.percentualParticipacao).toBeNull();
+    expect(s.valorParticipacao).toBeNull();
+    expect(s.adesao).toBeNull();
+  });
+
+  it("mantém placa, veículo, FIPE e contato", () => {
+    const s = semPreco();
+
+    expect(s.placa).toBe("ABC1D23");
+    expect(s.marca).toBe("Agrale");
+    expect(s.codigoFipe).toBe("501001-0");
+    expect(s.valorFipe).toBe(239584);
+    expect(s.nome).toBe("Ana Souza");
+    expect(s.telefone).toBe("34991960908");
+  });
+
+  it("não registra uso nem questionário que não foram perguntados", () => {
+    const s = semPreco();
+
+    expect(s.usoDeclarado).toBeNull();
+    expect(s.respostasQuestionario).toBeNull();
+    expect(s.usoParaPrecificacao).toBe("STANDARD");
+  });
+
+  it("continua exigindo a placa", () => {
+    expect(() =>
+      montarSnapshot({
+        simulationId: gerarSimulationId(),
+        codigo: gerarCodigoSimulacao(),
+        placa: "",
+        veiculo: CAMINHAO,
+        perfil: null,
+        precificacao: null,
+        lead: { nome: "Ana Souza", whatsapp: "34991960908" },
+      }),
+    ).toThrow(/sem a placa/i);
   });
 });

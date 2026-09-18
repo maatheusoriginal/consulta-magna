@@ -47,7 +47,7 @@ export function StepVeiculo({
   placaInicial?: string;
   modoInicial?: "placa" | "manual";
 }) {
-  const { veiculo, placa: placaSalva, setVeiculo, setPlaca, irPara } = useWizard();
+  const { veiculo, placa: placaSalva, semPrecificacao, setVeiculo, setPlaca, irPara } = useWizard();
 
   const [modo, setModo] = useState<"placa" | "manual">(modoInicial);
   const [placa, setPlacaLocal] = useState(normalizePlaca(placaInicial || placaSalva));
@@ -283,11 +283,12 @@ export function StepVeiculo({
             Placa {formatPlaca(placa)}
           </span>
           <h1 className="mt-4 text-[28px] font-bold leading-tight md:text-[36px]">
-            Selecione a versão correta
+            {candidatos.length === 1 ? "Confirme a versão do veículo" : "Selecione a versão correta"}
           </h1>
           <p className="mt-2 text-base text-text-secondary">
-            A placa aponta para mais de uma versão na tabela FIPE. Confirme qual é a do seu
-            veículo para calcularmos os valores certos.
+            {candidatos.length === 1
+              ? "Encontramos uma versão compatível. Confirme se é a versão correta do seu veículo."
+              : "Encontramos mais de uma versão compatível. Confirme qual é a do seu veículo."}
           </p>
         </header>
 
@@ -344,7 +345,7 @@ export function StepVeiculo({
             Identificamos o seu veículo
           </h1>
           <p className="mt-2 text-base text-text-secondary">
-            Confira os dados oficiais da tabela FIPE para continuar.
+            Confira os dados de referência da tabela FIPE para continuar.
           </p>
         </header>
 
@@ -377,7 +378,13 @@ export function StepVeiculo({
         </article>
 
         <div className="space-y-3">
-          <button type="button" onClick={() => irPara("perfil")} className="btn-primary">
+          <button
+            type="button"
+            // Veículo sem precificação automática não passa pelo questionário:
+            // vai direto para a explicação e a captura do lead.
+            onClick={() => irPara(semPrecificacao ? "plano" : "perfil")}
+            className="btn-primary"
+          >
             Confirmar e continuar
             <ArrowRight size={18} strokeWidth={2} aria-hidden />
           </button>

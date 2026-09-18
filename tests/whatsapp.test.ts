@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { WHATSAPP_NUMERO } from "@/lib/config";
 import { formatBRL } from "@/lib/format";
 import { montarSnapshot } from "@/lib/cotacao";
-import type { CotacaoSnapshot } from "@/lib/leads/types";
+import { temPrecificacao, type CotacaoPrecificada, type CotacaoSnapshot } from "@/lib/leads/types";
 import { EstimatedPricingProvider } from "@/lib/pricing";
 import type { PrecoDisponivel } from "@/lib/pricing/types";
 import { WhatsAppService, whatsAppService } from "@/lib/whatsapp";
@@ -13,7 +13,7 @@ import { WhatsAppService, whatsAppService } from "@/lib/whatsapp";
 const NUMERO_OFICIAL = "5534991960908";
 
 /** Monta uma cotação de ponta a ponta, como o wizard faz. */
-function cotacaoDeTeste(): CotacaoSnapshot {
+function cotacaoDeTeste(): CotacaoPrecificada {
   const preco = new EstimatedPricingProvider().precificar({
     categoria: "CAR",
     valorFipe: 28436,
@@ -23,7 +23,7 @@ function cotacaoDeTeste(): CotacaoSnapshot {
 
   const padrao = preco.participacoes.find((p) => p.id === "padrao")!;
 
-  return montarSnapshot({
+  const snapshot = montarSnapshot({
     simulationId: "7c1f2d3e-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
     codigo: "MG-48213",
     placa: "BRA2E19",
@@ -49,13 +49,18 @@ function cotacaoDeTeste(): CotacaoSnapshot {
       terceiros: "alta",
       vidros: "sim",
     },
-    planoRecomendado: "premium",
-    planoEscolhido: "ouro",
-    participacao: padrao,
-    taxaAdesao: padrao.taxaAdesao,
-    statusPrecificacao: preco.status,
+    precificacao: {
+      status: preco.status,
+      planoRecomendado: "premium",
+      planoEscolhido: "ouro",
+      participacao: padrao,
+      taxaAdesao: padrao.taxaAdesao,
+    },
     lead: { nome: "Ana Souza", whatsapp: "(34) 99196-0908", email: "ana@exemplo.com" },
   });
+
+  if (!temPrecificacao(snapshot)) throw new Error("esperava cotação precificada");
+  return snapshot;
 }
 
 describe("número do consultor", () => {
@@ -233,5 +238,71 @@ describe("mensagem final", () => {
 
     expect(texto).toContain("Reduzida — 12,5%");
     expect(texto).not.toContain("13%");
+  });
+});
+
+describe("mensagem de veículo sem precificação", () => {
+  const base = cotacaoDeTeste();
+  const semPreco: CotacaoSnapshot = {
+    ...base,
+    placa: "XYZ9K88",
+    tipoVeiculo: "caminhoes",
+    marca: "Agrale",
+    modelo: "10000 / 10000 S 2p (diesel)",
+    versao: "10000 / 10000 S 2p (diesel)",
+    combustivel: "Diesel",
+    codigoFipe: "501001-0",
+    valorFipe: 239584,
+    usoDeclarado: null,
+    respostasQuestionario: null,
+    statusPrecificacao: "UNAVAILABLE",
+    planoRecomendado: null,
+    planoEscolhido: null,
+    mensalidade: null,
+    modalidadeParticipacao: null,
+    percentualParticipacao: null,
+    valorParticipacao: null,
+    adesao: null,
+  };
+  const mensagem = whatsAppService.montarMensagem(semPreco);
+
+  it("começa com a placa, antes dos dados do veículo", () => {
+    const iPlaca = mensagem.indexOf("🚗 PLACA");
+    const iVeiculo = mensagem.indexOf("VEÍCULO");
+
+    expect(iPlaca).toBeGreaterThan(-1);
+    expect(iPlaca).toBeLessThan(iVeiculo);
+    expect(mensagem).toContain("XYZ-9K88");
+    expect(mensagem).not.toMatch(/Placa não informada/i);
+  });
+
+  it("usa o ícone de caminhão na seção de veículo", () => {
+    expect(mensagem).toContain("🚚 VEÍCULO");
+  });
+
+  it("traz cliente e dados da FIPE", () => {
+    expect(mensagem).toContain("👤 CLIENTE");
+    expect(mensagem).toContain("Ana Souza");
+    expect(mensagem).toContain("Código: 501001-0");
+    expect(mensagem).toContain("R$ 239.584,00");
+  });
+
+  it("pede cotação em vez de anunciar valores inexistentes", () => {
+    expect(mensagem.endsWith("Gostaria de receber uma cotação para este veículo.")).toBe(true);
+    expect(mensagem).not.toContain("\nMENSALIDADE\n");
+    expect(mensagem).not.toContain("\nPLANO\n");
+    expect(mensagem).not.toContain("\nADESÃO\n");
+    expect(mensagem).not.toContain("\nPARTICIPAÇÃO\n");
+    // Nenhum R$ 0 apresentado como se fosse preço.
+    expect(mensagem).not.toMatch(/R\$ 0,00\/mês/);
+  });
+
+  it("continua exigindo a placa", () => {
+    expect(() => whatsAppService.montarMensagem({ ...semPreco, placa: "" })).toThrow(/exige a placa/i);
+  });
+
+  it("carrega o código da simulação", () => {
+    expect(mensagem).toContain("Código da simulação:");
+    expect(mensagem).toContain(semPreco.codigo);
   });
 });

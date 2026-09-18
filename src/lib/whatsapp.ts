@@ -1,6 +1,14 @@
 import { WHATSAPP_NUMERO } from "./config";
 import { formatBRL, formatPercentual, formatPlaca } from "./format";
-import type { CotacaoSnapshot } from "./leads/types";
+import { temPrecificacao, type CotacaoSnapshot } from "./leads/types";
+import type { TipoVeiculo } from "./types";
+
+/** Ícone do veículo por categoria, só para leitura rápida pelo consultor. */
+const EMOJI_VEICULO: Record<TipoVeiculo, string> = {
+  carros: "🚘",
+  motos: "🏍️",
+  caminhoes: "🚚",
+};
 
 /**
  * Serviço de WhatsApp.
@@ -21,6 +29,41 @@ export class WhatsAppService {
       throw new Error("A mensagem do WhatsApp exige a placa do veículo.");
     }
 
+    const linhas: string[] = [
+      "Olá! Fiz uma simulação pelo site e gostaria de continuar meu atendimento.",
+      "",
+      // A placa é a informação mais importante para o consultor: vem primeiro.
+      "🚗 PLACA",
+      formatPlaca(cotacao.placa),
+      "",
+      "👤 CLIENTE",
+      cotacao.nome,
+      "",
+      `${EMOJI_VEICULO[cotacao.tipoVeiculo]} VEÍCULO`,
+      `${cotacao.marca} ${cotacao.modelo}`,
+      String(cotacao.ano),
+      "",
+      "📊 FIPE",
+      `Código: ${cotacao.codigoFipe}`,
+      `Valor: ${formatBRL(cotacao.valorFipe)}`,
+      `Referência: ${cotacao.mesReferenciaFipe}`,
+      "",
+    ];
+
+    // Para motocicletas a finalidade não é perguntada; não inventamos um uso.
+    if (cotacao.usoDeclarado) linhas.push("USO", cotacao.usoDeclarado, "");
+
+    if (!temPrecificacao(cotacao)) {
+      // Veículo sem regra de precificação automática: nenhum valor é inventado.
+      linhas.push(
+        "Código da simulação:",
+        cotacao.codigo,
+        "",
+        "Gostaria de receber uma cotação para este veículo.",
+      );
+      return linhas.join("\n");
+    }
+
     const participacao =
       cotacao.percentualParticipacao === null
         ? {
@@ -32,27 +75,7 @@ export class WhatsAppService {
             valor: `${formatBRL(cotacao.valorParticipacao)} por evento coberto`,
           };
 
-    const linhas: Array<string | null> = [
-      "Olá! Fiz uma simulação pelo site e gostaria de continuar meu atendimento.",
-      "",
-      // A placa é a informação mais importante para o consultor: vem primeiro.
-      "🚗 PLACA",
-      formatPlaca(cotacao.placa),
-      "",
-      "👤 CLIENTE",
-      cotacao.nome,
-      "",
-      "🚘 VEÍCULO",
-      `${cotacao.marca} ${cotacao.modelo}`,
-      String(cotacao.ano),
-      "",
-      "📊 FIPE",
-      `Código: ${cotacao.codigoFipe}`,
-      `Valor: ${formatBRL(cotacao.valorFipe)}`,
-      `Referência: ${cotacao.mesReferenciaFipe}`,
-      "",
-      // Em moto a finalidade não é perguntada; não inventamos um uso declarado.
-      ...(cotacao.usoDeclarado ? ["USO", cotacao.usoDeclarado, ""] : []),
+    linhas.push(
       "PLANO",
       cotacao.planoEscolhido.toUpperCase(),
       "",
@@ -70,9 +93,9 @@ export class WhatsAppService {
       cotacao.codigo,
       "",
       "Gostaria de continuar o atendimento.",
-    ];
+    );
 
-    return linhas.filter((linha): linha is string => linha !== null).join("\n");
+    return linhas.join("\n");
   }
 
   montarLink(cotacao: CotacaoSnapshot): string {

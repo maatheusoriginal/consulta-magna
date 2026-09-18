@@ -1,8 +1,8 @@
 import type { PerfilRespostas, PlanoId, TipoVeiculo, UsoPrecificacao } from "../types";
 import type { PricingStatus } from "../pricing/types";
 
-/** Snapshot definitivo da cotação, montado no momento em que o lead é capturado. */
-export interface CotacaoSnapshot {
+/** Dados presentes em qualquer cotação, com ou sem precificação disponível. */
+interface CotacaoSnapshotBase {
   /** Identificador técnico único da simulação (UUID). */
   simulationId: string;
   /** Código legível para cliente e consultor, ex.: MG-48213 */
@@ -29,16 +29,20 @@ export interface CotacaoSnapshot {
 
   // Perfil
   /**
-   * Uso declarado pelo cliente. `null` quando a pergunta não foi feita — em
-   * moto a finalidade não altera a cotação, e registrar "Particular" sem o
-   * cliente ter declarado seria falso.
+   * Uso declarado pelo cliente. `null` quando a pergunta não foi feita — para
+   * motocicletas a finalidade não altera a precificação e não é perguntada, e
+   * registrar "Particular" sem o cliente ter declarado seria falso.
    */
   usoDeclarado: "Particular" | "Aplicativo / Táxi" | null;
   /** Faixa de uso efetivamente aplicada na precificação. */
   usoParaPrecificacao: UsoPrecificacao;
-  respostasQuestionario: Omit<PerfilRespostas, "finalidade">;
+  /** `null` quando o questionário não foi aplicado (veículo sem precificação). */
+  respostasQuestionario: Omit<PerfilRespostas, "finalidade"> | null;
+}
 
-  // Cotação
+/** Cotação com valores apurados. */
+export interface CotacaoPrecificada extends CotacaoSnapshotBase {
+  statusPrecificacao: Exclude<PricingStatus, "UNAVAILABLE">;
   planoRecomendado: PlanoId;
   planoEscolhido: PlanoId;
   mensalidade: number;
@@ -46,9 +50,31 @@ export interface CotacaoSnapshot {
   percentualParticipacao: number | null;
   valorParticipacao: number;
   adesao: number;
+}
 
-  /** Procedência dos valores: OFFICIAL, ESTIMATED ou UNAVAILABLE. */
-  statusPrecificacao: PricingStatus;
+/**
+ * Veículo sem regra de precificação automática (caminhão, por exemplo).
+ *
+ * Todos os campos de valor são `null` de propósito: inventar R$ 0 seria
+ * apresentar um preço que não existe.
+ */
+export interface CotacaoSemPrecificacao extends CotacaoSnapshotBase {
+  statusPrecificacao: "UNAVAILABLE";
+  planoRecomendado: null;
+  planoEscolhido: null;
+  mensalidade: null;
+  modalidadeParticipacao: null;
+  percentualParticipacao: null;
+  valorParticipacao: null;
+  adesao: null;
+}
+
+/** Snapshot definitivo da cotação, montado no momento em que o lead é capturado. */
+export type CotacaoSnapshot = CotacaoPrecificada | CotacaoSemPrecificacao;
+
+/** Estreita o snapshot para o caso em que há valores apurados. */
+export function temPrecificacao(snapshot: CotacaoSnapshot): snapshot is CotacaoPrecificada {
+  return snapshot.statusPrecificacao !== "UNAVAILABLE";
 }
 
 export interface ResultadoPersistencia {

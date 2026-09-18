@@ -98,6 +98,20 @@ informação. Interface, comparação, recomendador e precificação a respeitam
 | `MOTORCYCLE` | Bronze, Prata | Não há dados que confirmem Ouro/Premium para moto |
 | `TRUCK` | nenhum | `UNAVAILABLE`: a interface encaminha a um consultor |
 
+### Veículo sem precificação automática
+
+Categoria sem regra (`UNAVAILABLE`) não sai do fluxo: o cliente vê a tela
+"Este veículo precisa de uma análise individual", pula o questionário e vai
+direto para a captura do lead, que exige placa, nome e WhatsApp como qualquer
+outra cotação. Só depois de o lead ser persistido o WhatsApp é liberado.
+
+O snapshot desse lead sai com `statusPrecificacao: "UNAVAILABLE"` e **todos os
+campos de valor em `null`** — plano, mensalidade, participação e adesão.
+Nenhum R$ 0 é apresentado como se fosse preço, e a mensagem do WhatsApp termina
+em "Gostaria de receber uma cotação para este veículo." em vez de anunciar
+valores. A rota `POST /api/lead` recusa uma cotação `UNAVAILABLE` que traga
+qualquer um desses campos preenchidos.
+
 O plano recomendado pertence obrigatoriamente a essa lista. Se o perfil apontar
 para algo acima do disponível (perfil exigente numa moto, por exemplo), o
 recomendador entrega **Prata** e marca `limitadoPelaCategoria`, informando que é
@@ -160,3 +174,10 @@ O Bronze **não** cobre incêndio, explosão e fenômenos da natureza, nem colis
 capotamento. Ele cobre roubo e furto, perda total, reboque, pane elétrica /
 mecânica / seca e assistência 24h com guincho até 250 km. Incêndio, explosão e
 fenômenos da natureza aparecem a partir do **Prata** nas propostas de referência.
+
+## Percentuais na interface
+
+Nenhuma tela escreve o percentual da participação padrão no código. A tela de
+plano lê a modalidade `padrao` devolvida pelo `PricingProvider` e formata o
+valor com `formatPercentual`, então carro mostra "12% da FIPE" e moto mostra
+"15% da FIPE" sem nenhum `if` por categoria na interface.

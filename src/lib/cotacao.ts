@@ -19,6 +19,15 @@ export function gerarSimulationId(): string {
   return crypto.randomUUID();
 }
 
+/** Bloco de valores apurados. Ausente quando não há regra para o veículo. */
+export interface PrecificacaoDaCotacao {
+  status: Exclude<PricingStatus, "UNAVAILABLE">;
+  planoRecomendado: PlanoId;
+  planoEscolhido: PlanoId;
+  participacao: ParticipacaoPrecificada;
+  taxaAdesao: number;
+}
+
 /**
  * Monta o snapshot definitivo da cotação.
  *
@@ -26,35 +35,36 @@ export function gerarSimulationId(): string {
  * partir dele e a mensagem do WhatsApp é montada a partir dele.
  *
  * A placa é obrigatória e vem sempre do que o cliente informou — nunca é
- * inferida a partir da FIPE.
+ * inferida a partir da FIPE. Quando `precificacao` é `null`, o snapshot sai com
+ * `statusPrecificacao: "UNAVAILABLE"` e todos os valores em `null`: não
+ * inventamos R$ 0 como se fosse preço.
  */
 export function montarSnapshot(entrada: {
   simulationId: string;
   codigo: string;
   placa: string;
   veiculo: FipeVeiculo;
-  perfil: PerfilRespostas;
-  planoRecomendado: PlanoId;
-  planoEscolhido: PlanoId;
-  participacao: ParticipacaoPrecificada;
-  taxaAdesao: number;
-  statusPrecificacao: PricingStatus;
+  /** `null` quando o questionário não foi aplicado. */
+  perfil: PerfilRespostas | null;
+  precificacao: PrecificacaoDaCotacao | null;
   lead: Lead;
 }): CotacaoSnapshot {
-  const { finalidade, ...respostasQuestionario } = entrada.perfil;
   const placa = normalizePlaca(entrada.placa);
-
   if (!placa) throw new Error("A cotação não pode ser fechada sem a placa do veículo.");
 
-  // Em moto a finalidade não é perguntada, então não há uso declarado.
-  const perguntamosAFinalidade = !finalidadeNaoAlteraCotacao(entrada.veiculo.tipo);
+  const { finalidade, ...respostas } = entrada.perfil ?? { finalidade: undefined };
+
+  // Para motocicletas a finalidade não altera a precificação e não é
+  // perguntada, então não há uso declarado a registrar.
+  const perguntamosAFinalidade =
+    entrada.perfil !== null && !finalidadeNaoAlteraCotacao(entrada.veiculo.tipo);
   const usoDeclarado = perguntamosAFinalidade
     ? finalidade === "aplicativo"
       ? ("Aplicativo / Táxi" as const)
       : ("Particular" as const)
     : null;
 
-  return {
+  const base = {
     simulationId: entrada.simulationId,
     codigo: entrada.codigo,
     criadoEm: new Date().toISOString(),
@@ -76,17 +86,37 @@ export function montarSnapshot(entrada: {
     mesReferenciaFipe: entrada.veiculo.mesReferencia,
 
     usoDeclarado,
-    usoParaPrecificacao: usoDeclarado === "Aplicativo / Táxi" ? "COMERCIAL" : "STANDARD",
-    respostasQuestionario,
+    usoParaPrecificacao: usoDeclarado === "Aplicativo / Táxi" ? ("COMERCIAL" as const) : ("STANDARD" as const),
+    respostasQuestionario: entrada.perfil
+      ? (respostas as Omit<PerfilRespostas, "finalidade">)
+      : null,
+  };
 
-    planoRecomendado: entrada.planoRecomendado,
-    planoEscolhido: entrada.planoEscolhido,
-    mensalidade: entrada.participacao.mensalidade,
-    modalidadeParticipacao: entrada.participacao.nome,
-    percentualParticipacao: entrada.participacao.percentual,
-    valorParticipacao: entrada.participacao.valor,
-    adesao: entrada.taxaAdesao,
+  if (!entrada.precificacao) {
+    return {
+      ...base,
+      statusPrecificacao: "UNAVAILABLE",
+      planoRecomendado: null,
+      planoEscolhido: null,
+      mensalidade: null,
+      modalidadeParticipacao: null,
+      percentualParticipacao: null,
+      valorParticipacao: null,
+      adesao: null,
+    };
+  }
 
-    statusPrecificacao: entrada.statusPrecificacao,
+  const { participacao } = entrada.precificacao;
+
+  return {
+    ...base,
+    statusPrecificacao: entrada.precificacao.status,
+    planoRecomendado: entrada.precificacao.planoRecomendado,
+    planoEscolhido: entrada.precificacao.planoEscolhido,
+    mensalidade: participacao.mensalidade,
+    modalidadeParticipacao: participacao.nome,
+    percentualParticipacao: participacao.percentual,
+    valorParticipacao: participacao.valor,
+    adesao: entrada.precificacao.taxaAdesao,
   };
 }

@@ -28,6 +28,9 @@ gratuitas — nenhuma chave de API é necessária para o site funcionar.
 - Carro de aplicativo/táxi: agravo na mensalidade e **somente a participação
   Padrão** disponível. Moto não é perguntada sobre aplicativo/táxi.
 - Bronze **não** cobre incêndio/fenômenos da natureza nem colisão.
+- Veículo sem precificação automática (caminhão) também captura lead: placa,
+  nome e WhatsApp obrigatórios, snapshot com `statusPrecificacao: "UNAVAILABLE"`
+  e todos os valores em `null` — nenhum R$ 0 apresentado como preço.
 - Moto não é perguntada sobre aplicativo/táxi. Isso **não** significa uso
   particular: o lead grava `usoDeclarado: null` e a mensagem omite a seção USO.
 

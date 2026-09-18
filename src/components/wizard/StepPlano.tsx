@@ -1,27 +1,25 @@
 "use client";
 
-import { ArrowRight, Lightbulb, MessageCircle, SlidersHorizontal, Star } from "lucide-react";
+import { ArrowRight, Lightbulb, SlidersHorizontal, Star } from "lucide-react";
 
+import { Aviso } from "@/components/Aviso";
 import { ListaCoberturas } from "@/components/ListaCoberturas";
 import { Preco } from "@/components/Preco";
 import { VeiculoResumo } from "@/components/VeiculoResumo";
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
-import { formatBRL } from "@/lib/format";
-import { whatsAppService } from "@/lib/whatsapp";
+import { formatBRL, formatPercentual } from "@/lib/format";
 import { useWizard } from "@/lib/wizard";
 
 export function StepPlano() {
   const { veiculo, recomendado, planoSelecionado, planosOfertados, preco, precosPorPlano, setPlano, irPara } =
     useWizard();
 
-  if (!veiculo || !recomendado || !planoSelecionado) return null;
+  if (!veiculo) return null;
 
-  // Categoria sem regra de precificação (caminhões): encaminhamos a um consultor.
+  // Categoria sem regra de precificação (caminhões). Esta verificação vem ANTES
+  // de exigir recomendação e plano, que nunca existem aqui — sem isso a tela
+  // ficaria em branco.
   if (!preco || preco.status === "UNAVAILABLE") {
-    const mensagem =
-      `Olá! Fiz uma consulta no site para ${veiculo.marca} ${veiculo.modelo} ${veiculo.anoModelo} ` +
-      `(FIPE ${formatBRL(veiculo.valor)}, cód. ${veiculo.codigoFipe}) e gostaria de uma cotação.`;
-
     return (
       <div className="animate-fade-in-up space-y-6">
         <header>
@@ -30,25 +28,28 @@ export function StepPlano() {
           </h1>
           <p className="mt-2 text-base text-text-secondary">
             {preco?.motivo ??
-              "Ainda não há regra de precificação para esta categoria de veículo."}
+              "Ainda não há regra de precificação automática para esta categoria de veículo."}
           </p>
         </header>
 
         <VeiculoResumo veiculo={veiculo} />
 
-        <a
-          href={whatsAppService.montarLinkComTexto(mensagem)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-whatsapp"
-        >
-          <MessageCircle size={18} strokeWidth={2} aria-hidden />
-          Falar com um consultor
-        </a>
+        <Aviso titulo="Como funciona a partir daqui">
+          Um consultor Magna avalia o veículo e monta a cotação manualmente. Para isso
+          precisamos da placa e dos seus dados de contato na próxima tela.
+        </Aviso>
+
+        <button type="button" onClick={() => irPara("resumo")} className="btn-primary">
+          Solicitar cotação com um consultor
+          <ArrowRight size={18} strokeWidth={2} aria-hidden />
+        </button>
       </div>
     );
   }
 
+  if (!recomendado || !planoSelecionado) return null;
+
+  const participacaoPadrao = preco.participacoes.find((p) => p.id === "padrao");
   const outros = planosOfertados.filter((p) => p.id !== planoSelecionado.id);
   const ehRecomendado = planoSelecionado.id === recomendado.plano.id;
 
@@ -81,7 +82,10 @@ export function StepPlano() {
         <h2 className="mt-4 text-2xl font-bold">Plano {planoSelecionado.nome}</h2>
         <Preco valor={preco.mensalidadeBase} tamanho="lg" className="mt-2" />
         <p className="mt-2 text-xs text-text-muted">
-          Valor na participação padrão (12% da FIPE). Você escolhe a participação na próxima tela.
+          {participacaoPadrao?.percentual != null
+            ? `Valor na participação padrão (${formatPercentual(participacaoPadrao.percentual)} da FIPE).`
+            : "Valor na participação padrão."}{" "}
+          Você escolhe a participação na próxima tela.
         </p>
         <p className="mt-1 text-xs text-text-muted">{AVISO_SIMULACAO_ESTIMADA}</p>
 

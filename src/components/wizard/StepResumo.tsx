@@ -13,10 +13,16 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { Aviso } from "@/components/Aviso";
 import { ListaCoberturas } from "@/components/ListaCoberturas";
 import { postJson } from "@/lib/client-api";
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
-import { gerarCodigoSimulacao, gerarSimulationId, montarSnapshot } from "@/lib/cotacao";
+import {
+  gerarCodigoSimulacao,
+  gerarSimulationId,
+  montarSnapshot,
+  type PrecificacaoDaCotacao,
+} from "@/lib/cotacao";
 import {
   formatBRL,
   formatPercentual,
@@ -38,6 +44,7 @@ export function StepResumo() {
     planoSelecionado,
     preco,
     participacao,
+    semPrecificacao,
     placa,
     setPlaca,
     concluir,
@@ -52,17 +59,19 @@ export function StepResumo() {
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
 
-  if (
-    !veiculo ||
-    !planoSelecionado ||
-    !participacao ||
-    !recomendado ||
-    !preco ||
-    preco.status === "UNAVAILABLE" ||
-    !perfilCompleto
-  ) {
-    return null;
-  }
+  // Veículo sem regra de precificação também captura lead: só não tem valores.
+  const precificacao: PrecificacaoDaCotacao | null =
+    preco && preco.status !== "UNAVAILABLE" && planoSelecionado && participacao && recomendado
+      ? {
+          status: preco.status,
+          planoRecomendado: recomendado.plano.id,
+          planoEscolhido: planoSelecionado.id,
+          participacao,
+          taxaAdesao: participacao.taxaAdesao,
+        }
+      : null;
+
+  if (!veiculo || (!precificacao && !semPrecificacao)) return null;
 
   const placaFinal = normalizePlaca(placaDigitada || placa);
 
@@ -88,17 +97,14 @@ export function StepResumo() {
     const lead = { nome: nome.trim(), whatsapp, email: email.trim() || undefined };
 
     // 4 — snapshot definitivo da cotação que o usuário acabou de fazer.
+    // Sem regra de precificação nenhum valor é inventado: vai tudo `null`.
     const snapshot: CotacaoSnapshot = montarSnapshot({
       simulationId: gerarSimulationId(),
       codigo: gerarCodigoSimulacao(),
       placa: placaFinal,
       veiculo: veiculo!,
-      perfil: perfilCompleto!,
-      planoRecomendado: recomendado!.plano.id,
-      planoEscolhido: planoSelecionado!.id,
-      participacao: participacao!,
-      taxaAdesao: participacao!.taxaAdesao,
-      statusPrecificacao: preco!.status,
+      perfil: precificacao ? perfilCompleto : null,
+      precificacao,
       lead,
     });
 
@@ -128,7 +134,7 @@ export function StepResumo() {
     isPlacaValida(placaFinal) &&
     (!email || isEmailValido(email));
 
-  const carencias = planoSelecionado.coberturas
+  const carencias = (planoSelecionado?.coberturas ?? [])
     .filter((c) => c.nota)
     .map((c) => `${c.label}: ${c.nota}`)
     .join(" · ");
@@ -138,13 +144,15 @@ export function StepResumo() {
       <header>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-red-subtle px-3 py-1.5 text-xs font-semibold text-primary">
           <ShieldCheck size={14} strokeWidth={2} aria-hidden />
-          Proposta personalizada
+          {precificacao ? "Proposta personalizada" : "Análise individual"}
         </span>
         <h1 className="mt-4 text-[28px] font-bold leading-tight md:text-[36px]">
-          Sua cotação está pronta
+          {precificacao ? "Sua cotação está pronta" : "Vamos preparar sua cotação"}
         </h1>
         <p className="mt-2 text-base text-text-secondary">
-          Confira os detalhes do seu {veiculo.marca} {veiculo.modelo.split(" ")[0]}.
+          {precificacao
+            ? `Confira os detalhes do seu ${veiculo.marca} ${veiculo.modelo.split(" ")[0]}.`
+            : "Informe a placa e seus dados de contato para um consultor montar a cotação deste veículo."}
         </p>
       </header>
 
@@ -162,10 +170,11 @@ export function StepResumo() {
           ) : null}
         </div>
 
+        {precificacao ? (
         <div className="space-y-5 p-5">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-text-muted">Plano</p>
-            <p className="text-xl font-bold">{planoSelecionado.nome}</p>
+            <p className="text-xl font-bold">{planoSelecionado?.nome}</p>
           </div>
 
           <div className="rounded-card-lg bg-red-subtle p-5">
@@ -173,7 +182,7 @@ export function StepResumo() {
             <p className="mt-1 flex items-baseline gap-1.5">
               <span className="text-base font-semibold text-text-secondary">R$</span>
               <span className="text-[42px] font-extrabold leading-none tracking-[-0.03em]">
-                {formatBRL(participacao.mensalidade).replace(/^R\$\s*/, "")}
+                {formatBRL(precificacao.participacao.mensalidade).replace(/^R\$\s*/, "")}
               </span>
               <span className="text-sm font-medium text-text-secondary">/mês</span>
             </p>
@@ -184,29 +193,32 @@ export function StepResumo() {
             <div className="rounded-card border border-border-subtle p-4">
               <dt className="text-xs font-medium text-text-secondary">Participação</dt>
               <dd className="mt-1 text-lg font-bold">
-                {participacao.percentual === null ? "R$ 0" : formatBRL(participacao.valor)}
+                {precificacao.participacao.percentual === null
+                  ? "R$ 0"
+                  : formatBRL(precificacao.participacao.valor)}
               </dd>
               <dd className="mt-1 text-xs text-text-muted">
-                {participacao.percentual === null
+                {precificacao.participacao.percentual === null
                   ? "No 1º evento coberto · carência de 60 dias"
-                  : participacao.pisoAplicado
+                  : precificacao.participacao.pisoAplicado
                     ? "Piso mínimo contratual — por evento coberto"
-                    : `${participacao.nome} (${formatPercentual(participacao.percentual)}) — por evento coberto`}
+                    : `${precificacao.participacao.nome} (${formatPercentual(precificacao.participacao.percentual)}) — por evento coberto`}
               </dd>
             </div>
 
             <div className="rounded-card border border-border-subtle p-4">
               <dt className="text-xs font-medium text-text-secondary">Taxa de adesão</dt>
-              <dd className="mt-1 text-lg font-bold">{formatBRL(participacao.taxaAdesao)}</dd>
+              <dd className="mt-1 text-lg font-bold">{formatBRL(precificacao.taxaAdesao)}</dd>
               <dd className="mt-1 text-xs text-text-muted">
-                Valor único de ativação · mínimo de {formatBRL(preco.taxaAdesaoMinima)}
+                Valor único de ativação · mínimo de{" "}
+                {formatBRL(preco && preco.status !== "UNAVAILABLE" ? preco.taxaAdesaoMinima : 300)}
               </dd>
             </div>
           </dl>
 
           <div>
             <p className="mb-3 text-sm font-semibold">Coberturas inclusas no plano</p>
-            <ListaCoberturas itens={planoSelecionado.destaques} />
+            <ListaCoberturas itens={planoSelecionado?.destaques ?? []} />
           </div>
 
           {carencias ? (
@@ -218,6 +230,14 @@ export function StepResumo() {
             </div>
           ) : null}
         </div>
+        ) : (
+          <div className="space-y-4 p-5">
+            <Aviso titulo="Este veículo precisa de uma análise individual">
+              Não temos precificação automática para esta categoria. Um consultor Magna monta a
+              cotação manualmente a partir dos dados abaixo.
+            </Aviso>
+          </div>
+        )}
       </article>
 
       <section className="rounded-card-xl border border-border-subtle bg-white p-6 shadow-card">

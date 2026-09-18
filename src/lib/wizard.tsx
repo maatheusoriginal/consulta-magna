@@ -99,8 +99,13 @@ interface ContextoWizard extends EstadoWizard {
   recomendado: Recomendacao | null;
   /** Planos comercializados para a categoria do veículo consultado. */
   planosOfertados: Plano[];
-  /** `true` quando a categoria exige uso particular (moto não roda em aplicativo). */
+  /**
+   * `true` quando a finalidade não é perguntada — para motocicletas ela não
+   * altera a precificação. Isso NÃO significa que o uso seja particular.
+   */
   finalidadeFixa: boolean;
+  /** `true` quando não há regra de precificação para a categoria do veículo. */
+  semPrecificacao: boolean;
   /** Plano efetivamente escolhido — cai para o recomendado enquanto não houver escolha. */
   planoSelecionado: Plano | null;
   /** Resultado do PricingProvider para o plano selecionado. */
@@ -205,8 +210,11 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     const veiculo = estado.veiculo;
     const categoria = veiculo ? categoriaDoTipo(veiculo.tipo) : null;
 
-    // Moto não roda em aplicativo/táxi: a finalidade é sempre particular.
+    // Para motocicletas a finalidade não altera a precificação e não é
+    // perguntada. O uso declarado fica vazio; a precificação usa a faixa padrão.
     const finalidadeFixa = veiculo ? finalidadeNaoAlteraCotacao(veiculo.tipo) : false;
+    // `particular` aqui é só a faixa de precificação padrão; o snapshot
+    // registra `usoDeclarado: null` porque o cliente não declarou nada.
     const perfil: Partial<PerfilRespostas> = finalidadeFixa
       ? { ...estado.perfil, finalidade: "particular" }
       : estado.perfil;
@@ -273,6 +281,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
       perfilCompleto: completo ? perfil : null,
       planosOfertados: ofertados,
       finalidadeFixa,
+      semPrecificacao: veiculo !== null && idsOfertados.length === 0,
       recomendado,
       planoSelecionado,
       preco,

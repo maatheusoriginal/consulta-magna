@@ -99,7 +99,7 @@ export function StepPerfil() {
         </p>
       </header>
 
-      {/* Moto não roda em aplicativo/táxi: a pergunta não é exibida. */}
+      {/* Para motocicletas a finalidade não altera a precificação e não é perguntada. */}
       {finalidadeFixa ? null : (
       <section>
         <h2 className="mb-3 text-base font-semibold">Finalidade principal</h2>

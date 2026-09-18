@@ -10,7 +10,10 @@ export const dynamic = "force-dynamic";
 const STATUS_VALIDOS = new Set(["OFFICIAL", "ESTIMATED", "UNAVAILABLE"]);
 
 /** Valida o snapshot recebido do navegador antes de persistir. */
-function validar(corpo: Partial<CotacaoSnapshot>): string | null {
+type CorpoLead = Partial<Record<keyof CotacaoSnapshot, unknown>> &
+  Partial<Pick<CotacaoSnapshot, "codigo" | "simulationId" | "placa" | "nome" | "telefone" | "email" | "codigoFipe" | "valorFipe" | "statusPrecificacao">>;
+
+function validar(corpo: CorpoLead): string | null {
   if (!corpo.simulationId) return "Cotação sem identificador de simulação.";
   if (!corpo.codigo) return "Cotação sem código de simulação.";
   if (!isPlacaValida(corpo.placa ?? "")) return "Cotação sem placa válida do veículo.";
@@ -20,11 +23,30 @@ function validar(corpo: Partial<CotacaoSnapshot>): string | null {
   if (!corpo.codigoFipe || !(corpo.valorFipe && corpo.valorFipe > 0)) {
     return "Cotação sem dados da tabela FIPE.";
   }
-  if (!corpo.planoEscolhido) return "Cotação sem plano escolhido.";
-  if (!(corpo.mensalidade && corpo.mensalidade > 0)) return "Cotação sem mensalidade.";
   if (!STATUS_VALIDOS.has(corpo.statusPrecificacao ?? "")) {
     return "Cotação sem status de precificação.";
   }
+
+  if (corpo.statusPrecificacao === "UNAVAILABLE") {
+    // Veículo sem regra de precificação: nenhum valor é exigido, e nenhum pode
+    // ser inventado. R$ 0 aqui seria apresentar um preço que não existe.
+    for (const campo of [
+      "planoEscolhido",
+      "mensalidade",
+      "modalidadeParticipacao",
+      "valorParticipacao",
+      "adesao",
+    ] as const) {
+      if (corpo[campo] !== null && corpo[campo] !== undefined) {
+        return `Cotação UNAVAILABLE não pode trazer ${campo}.`;
+      }
+    }
+    return null;
+  }
+
+  if (!corpo.planoEscolhido) return "Cotação sem plano escolhido.";
+  const mensalidade = typeof corpo.mensalidade === "number" ? corpo.mensalidade : 0;
+  if (!(mensalidade > 0)) return "Cotação sem mensalidade.";
   return null;
 }
 
@@ -35,9 +57,9 @@ function validar(corpo: Partial<CotacaoSnapshot>): string | null {
  * (`persistido`) — log de servidor não conta como persistência.
  */
 export async function POST(request: Request) {
-  let corpo: Partial<CotacaoSnapshot>;
+  let corpo: CorpoLead;
   try {
-    corpo = (await request.json()) as Partial<CotacaoSnapshot>;
+    corpo = (await request.json()) as CorpoLead;
   } catch {
     return erro("Corpo da requisição inválido.");
   }

@@ -150,3 +150,79 @@ describe("validação do snapshot", () => {
     });
   }
 });
+
+describe("cotação sem precificação (UNAVAILABLE)", () => {
+  const SEM_PRECO = {
+    ...SNAPSHOT,
+    placa: "XYZ9K88",
+    tipoVeiculo: "caminhoes" as const,
+    marca: "Agrale",
+    modelo: "10000 / 10000 S 2p (diesel)",
+    versao: "10000 / 10000 S 2p (diesel)",
+    combustivel: "Diesel",
+    codigoFipe: "501001-0",
+    valorFipe: 239584,
+    usoDeclarado: null,
+    respostasQuestionario: null,
+    statusPrecificacao: "UNAVAILABLE" as const,
+    planoRecomendado: null,
+    planoEscolhido: null,
+    mensalidade: null,
+    modalidadeParticipacao: null,
+    percentualParticipacao: null,
+    valorParticipacao: null,
+    adesao: null,
+  };
+
+  it("é aceita sem mensalidade e chega ao webhook com o status correto", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("LEAD_WEBHOOK_URL", "https://hook.exemplo/leads");
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const POST = await carregarRota();
+    const resposta = await POST(requisicao(SEM_PRECO));
+    const corpo = (await resposta.json()) as { persistido: boolean };
+
+    expect(resposta.status).toBe(200);
+    expect(corpo.persistido).toBe(true);
+
+    const enviado = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as CotacaoSnapshot;
+    expect(enviado.statusPrecificacao).toBe("UNAVAILABLE");
+    expect(enviado.placa).toBe("XYZ9K88");
+    expect(enviado.mensalidade).toBeNull();
+    expect(enviado.planoEscolhido).toBeNull();
+    expect(enviado.adesao).toBeNull();
+  });
+
+  it("continua exigindo a placa", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const POST = await carregarRota();
+    const resposta = await POST(requisicao({ ...SEM_PRECO, placa: "" }));
+
+    expect(resposta.status).toBe(400);
+    expect(((await resposta.json()) as { erro: string }).erro).toMatch(/placa/i);
+  });
+
+  it("recusa valores inventados numa cotação UNAVAILABLE", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const POST = await carregarRota();
+
+    for (const campo of ["mensalidade", "adesao", "valorParticipacao"] as const) {
+      const resposta = await POST(requisicao({ ...SEM_PRECO, [campo]: 0 }));
+      expect(resposta.status).toBe(400);
+      expect(((await resposta.json()) as { erro: string }).erro).toMatch(new RegExp(campo, "i"));
+    }
+  });
+
+  it("cotação ESTIMATED continua exigindo mensalidade positiva", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const POST = await carregarRota();
+    const resposta = await POST(requisicao({ ...SNAPSHOT, mensalidade: 0 }));
+
+    expect(resposta.status).toBe(400);
+    expect(((await resposta.json()) as { erro: string }).erro).toMatch(/mensalidade/i);
+  });
+});

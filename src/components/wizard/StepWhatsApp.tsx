@@ -4,6 +4,7 @@ import { Check, MessageCircle, RotateCcw, ShieldCheck } from "lucide-react";
 
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { formatBRL, formatPlaca } from "@/lib/format";
+import { temPrecificacao } from "@/lib/leads/types";
 import { whatsAppService } from "@/lib/whatsapp";
 import { useWizard } from "@/lib/wizard";
 
@@ -25,7 +26,7 @@ const PASSOS = [
 export function StepWhatsApp() {
   const { snapshot, planoSelecionado, reiniciar, irPara } = useWizard();
 
-  if (!snapshot || !planoSelecionado) return null;
+  if (!snapshot) return null;
 
   // Link montado a partir do snapshot definitivo — nada fixo no código.
   const linkWhatsApp = whatsAppService.montarLink(snapshot);
@@ -70,33 +71,43 @@ export function StepWhatsApp() {
               <dd className="font-semibold">{snapshot.usoDeclarado}</dd>
             </div>
           ) : null}
-          <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-text-secondary">Plano</dt>
-            <dd className="font-semibold">{planoSelecionado.nome}</dd>
-          </div>
-          <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-text-secondary">Participação</dt>
-            <dd className="text-right font-semibold">
-              {snapshot.percentualParticipacao === null
-                ? "R$ 0 no 1º evento"
-                : formatBRL(snapshot.valorParticipacao)}
-            </dd>
-          </div>
-          <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-text-secondary">Taxa de adesão</dt>
-            <dd className="font-semibold">{formatBRL(snapshot.adesao)}</dd>
-          </div>
+          {temPrecificacao(snapshot) ? (
+            <>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="text-text-secondary">Plano</dt>
+                <dd className="font-semibold">{planoSelecionado?.nome}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="text-text-secondary">Participação</dt>
+                <dd className="text-right font-semibold">
+                  {snapshot.percentualParticipacao === null
+                    ? "R$ 0 no 1º evento"
+                    : formatBRL(snapshot.valorParticipacao)}
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="text-text-secondary">Taxa de adesão</dt>
+                <dd className="font-semibold">{formatBRL(snapshot.adesao)}</dd>
+              </div>
+            </>
+          ) : null}
         </dl>
 
-        <div className="mt-5 flex items-baseline justify-between gap-4 border-t border-border-subtle pt-5">
-          <p className="text-sm font-semibold">Mensalidade</p>
-          <p className="flex items-baseline gap-1">
-            <span className="text-3xl font-extrabold tracking-[-0.03em]">
-              {formatBRL(snapshot.mensalidade)}
-            </span>
-            <span className="text-sm text-text-secondary">/mês</span>
+        {temPrecificacao(snapshot) ? (
+          <div className="mt-5 flex items-baseline justify-between gap-4 border-t border-border-subtle pt-5">
+            <p className="text-sm font-semibold">Mensalidade</p>
+            <p className="flex items-baseline gap-1">
+              <span className="text-3xl font-extrabold tracking-[-0.03em]">
+                {formatBRL(snapshot.mensalidade)}
+              </span>
+              <span className="text-sm text-text-secondary">/mês</span>
+            </p>
+          </div>
+        ) : (
+          <p className="mt-5 border-t border-border-subtle pt-5 text-sm text-text-secondary">
+            Um consultor Magna vai analisar este veículo e montar a cotação.
           </p>
-        </div>
+        )}
 
         {snapshot.statusPrecificacao === "ESTIMATED" ? (
           <p className="mt-3 text-xs text-text-muted">{AVISO_SIMULACAO_ESTIMADA}</p>

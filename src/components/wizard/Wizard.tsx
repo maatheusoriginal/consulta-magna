@@ -17,7 +17,8 @@ import { StepWhatsApp } from "./StepWhatsApp";
 
 export function Wizard() {
   const parametros = useSearchParams();
-  const { tela, veiculo, perfilCompleto, snapshot, hidratado, irPara } = useWizard();
+  const { tela, veiculo, perfilCompleto, semPrecificacao, snapshot, hidratado, irPara } =
+    useWizard();
 
   const placaInicial = normalizePlaca(parametros.get("placa") ?? "");
   const modoInicial = parametros.get("modo") === "manual" ? "manual" : "placa";
@@ -26,7 +27,12 @@ export function Wizard() {
   useEffect(() => {
     if (!hidratado) return;
     if (tela !== "veiculo" && !veiculo) irPara("veiculo");
-    else if (
+    else if (semPrecificacao && ["perfil", "comparar", "participacao"].includes(tela)) {
+      // Veículo sem precificação automática não passa pelo questionário nem
+      // pela comparação: vai do veículo direto para a análise individual.
+      irPara("plano");
+    } else if (
+      !semPrecificacao &&
       ["plano", "comparar", "participacao", "resumo", "whatsapp"].includes(tela) &&
       !perfilCompleto
     ) {
@@ -35,7 +41,7 @@ export function Wizard() {
       // A tela final só existe depois que o lead foi capturado e persistido.
       irPara("resumo");
     }
-  }, [hidratado, tela, veiculo, perfilCompleto, snapshot, irPara]);
+  }, [hidratado, tela, veiculo, perfilCompleto, semPrecificacao, snapshot, irPara]);
 
   const etapaAtual = TELAS.find((t) => t.id === tela)?.etapa ?? 0;
   const largura = tela === "comparar" ? "max-w-compare" : "max-w-wizard";
