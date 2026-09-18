@@ -9,6 +9,7 @@ import {
 import type { CotacaoSnapshot } from "@/lib/leads/types";
 
 const SNAPSHOT: CotacaoSnapshot = {
+  simulationId: "7c1f2d3e-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
   codigo: "MG-12345",
   criadoEm: "2026-09-18T12:00:00.000Z",
   nome: "Ana Souza",
@@ -24,7 +25,8 @@ const SNAPSHOT: CotacaoSnapshot = {
   codigoFipe: "005324-4",
   valorFipe: 28436,
   mesReferenciaFipe: "setembro de 2026",
-  tipoUso: "Particular",
+  usoDeclarado: "Particular",
+  usoParaPrecificacao: "STANDARD",
   respostasQuestionario: {
     prioridade: "completa",
     viagens: "frequencia",
@@ -84,6 +86,16 @@ describe("seleção do repositório de leads", () => {
 });
 
 describe("ConsoleLeadRepository", () => {
+  it("recebe a placa no snapshot", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const repo = new ConsoleLeadRepository();
+
+    await repo.salvar(SNAPSHOT);
+    expect(SNAPSHOT.placa).toBe("BRA2E19");
+    // ...mas a placa não vai para o log, que é resumo sem dados pessoais.
+    expect(JSON.stringify(info.mock.calls)).not.toContain(SNAPSHOT.placa);
+  });
+
   it("não anuncia o lead como salvo", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     const resultado = await new ConsoleLeadRepository().salvar(SNAPSHOT);
@@ -118,6 +130,9 @@ describe("WebhookLeadRepository", () => {
     expect(resultado.persistido).toBe(true);
     const corpo = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as CotacaoSnapshot;
     expect(corpo).toEqual(SNAPSHOT);
+    // A placa é o dado mais importante para o consultor: tem que chegar.
+    expect(corpo.placa).toBe(SNAPSHOT.placa);
+    expect(corpo.simulationId).toBe(SNAPSHOT.simulationId);
 
     vi.unstubAllGlobals();
   });
@@ -148,7 +163,8 @@ describe("snapshot do lead", () => {
       "codigoFipe",
       "valorFipe",
       "mesReferenciaFipe",
-      "tipoUso",
+      "usoDeclarado",
+      "usoParaPrecificacao",
       "respostasQuestionario",
       "planoRecomendado",
       "planoEscolhido",
@@ -160,6 +176,7 @@ describe("snapshot do lead", () => {
       "statusPrecificacao",
       "criadoEm",
       "codigo",
+      "simulationId",
     ];
 
     for (const campo of obrigatorios) expect(SNAPSHOT[campo]).toBeDefined();

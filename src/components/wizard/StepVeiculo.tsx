@@ -1,6 +1,15 @@
 "use client";
 
-import { ArrowRight, Car, CircleAlert, CircleCheck, Loader2, PenLine, Search } from "lucide-react";
+import {
+  ArrowRight,
+  Bike,
+  Car,
+  CircleAlert,
+  CircleCheck,
+  Loader2,
+  PenLine,
+  Search,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { SelectionCard } from "@/components/SelectionCard";
@@ -13,6 +22,8 @@ import { useWizard } from "@/lib/wizard";
 interface RespostaPlaca {
   configurado: boolean;
   dados?: { marca?: string; modelo?: string; ano?: number };
+  /** `true` quando o provedor não informou a categoria e precisamos perguntar. */
+  precisaTipoVeiculo?: boolean;
   /** Versões compatíveis. A escolha é sempre do usuário — nunca automática. */
   candidatos: FipeVeiculo[];
 }
@@ -23,6 +34,12 @@ const TIPOS: Array<{ id: TipoVeiculo; label: string }> = [
   { id: "caminhoes", label: "Caminhão" },
 ];
 
+/** Categorias oferecidas quando a placa não informou o tipo do veículo. */
+const TIPOS_PLACA = [
+  { id: "carros" as const, label: "Carro", texto: "Automóvel de passeio", icone: Car },
+  { id: "motos" as const, label: "Moto", texto: "Motocicleta ou ciclomotor", icone: Bike },
+];
+
 export function StepVeiculo({
   placaInicial = "",
   modoInicial = "placa",
@@ -30,10 +47,10 @@ export function StepVeiculo({
   placaInicial?: string;
   modoInicial?: "placa" | "manual";
 }) {
-  const { veiculo, setVeiculo, irPara } = useWizard();
+  const { veiculo, placa: placaSalva, setVeiculo, setPlaca, irPara } = useWizard();
 
   const [modo, setModo] = useState<"placa" | "manual">(modoInicial);
-  const [placa, setPlaca] = useState(normalizePlaca(placaInicial));
+  const [placa, setPlacaLocal] = useState(normalizePlaca(placaInicial || placaSalva));
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [consultando, setConsultando] = useState(false);
@@ -47,6 +64,7 @@ export function StepVeiculo({
   const [ano, setAno] = useState("");
   const [carregando, setCarregando] = useState<"marcas" | "modelos" | "anos" | null>(null);
   const [candidatos, setCandidatos] = useState<FipeVeiculo[]>([]);
+  const [perguntarTipo, setPerguntarTipo] = useState(false);
 
   const buscarPreco = useCallback(
     async (t: TipoVeiculo, ma: string, mo: string, an: string) => {
@@ -137,31 +155,36 @@ export function StepVeiculo({
     if (codigo) await buscarPreco(tipo, marca, modelo, codigo);
   }
 
-  async function consultarPlaca(evento: React.FormEvent) {
-    evento.preventDefault();
+  async function buscarPorPlaca(tipoInformado?: TipoVeiculo) {
     setErro(null);
     setAviso(null);
     setCandidatos([]);
-
-    if (!isPlacaValida(placa)) {
-      setErro("Informe uma placa válida (ABC1234 ou ABC1D23).");
-      return;
-    }
-
     setConsultando(true);
+
     try {
-      const resposta = await getJson<RespostaPlaca>(`/api/placa?placa=${normalizePlaca(placa)}`);
+      const query = new URLSearchParams({ placa: normalizePlaca(placa) });
+      if (tipoInformado) query.set("tipo", tipoInformado);
+      const resposta = await getJson<RespostaPlaca>(`/api/placa?${query}`);
 
       if (!resposta.configurado) {
         setAviso(
           "A consulta automática por placa não está disponível. Selecione marca, modelo e ano — o valor FIPE é buscado na hora.",
         );
+        setPerguntarTipo(false);
         setModo("manual");
+        return;
+      }
+
+      // Sem categoria não pesquisamos: uma moto não pode ser procurada na
+      // tabela de carros. Perguntamos ao cliente antes de qualquer busca.
+      if (resposta.precisaTipoVeiculo) {
+        setPerguntarTipo(true);
         return;
       }
 
       // A correspondência com a FIPE é aproximada: quem confirma a versão é o
       // usuário. Nunca avançamos direto para uma FIPE escolhida por nós.
+      setPerguntarTipo(false);
       if (resposta.candidatos.length > 0) {
         setCandidatos(resposta.candidatos);
         return;
@@ -176,6 +199,78 @@ export function StepVeiculo({
     } finally {
       setConsultando(false);
     }
+  }
+
+  async function consultarPlaca(evento: React.FormEvent) {
+    evento.preventDefault();
+
+    if (!isPlacaValida(placa)) {
+      setErro("Informe uma placa válida (ABC1234 ou ABC1D23).");
+      return;
+    }
+
+    // A placa fica guardada no wizard desde já e acompanha toda a cotação.
+    setPlaca(placa);
+    await buscarPorPlaca();
+  }
+
+  // -------------------------------------------- categoria não informada pela placa
+  if (!veiculo && perguntarTipo) {
+    return (
+      <div className="animate-fade-in-up space-y-6">
+        <header>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-subtle px-3 py-1.5 text-xs font-semibold text-primary">
+            <CircleCheck size={14} strokeWidth={2} aria-hidden />
+            Placa {formatPlaca(placa)}
+          </span>
+          <h1 className="mt-4 text-[28px] font-bold leading-tight md:text-[36px]">
+            Que tipo de veículo é?
+          </h1>
+          <p className="mt-2 text-base text-text-secondary">
+            A consulta da placa não informou a categoria. Precisamos dela para procurar o veículo
+            na tabela certa.
+          </p>
+        </header>
+
+        <div role="radiogroup" aria-label="Tipo de veículo" className="grid gap-3 sm:grid-cols-2">
+          {TIPOS_PLACA.map((item) => (
+            <SelectionCard
+              key={item.id}
+              selecionado={false}
+              onSelect={() => {
+                setTipo(item.id);
+                setPerguntarTipo(false);
+                void buscarPorPlaca(item.id);
+              }}
+              ariaLabel={item.label}
+            >
+              <item.icone size={22} strokeWidth={1.8} aria-hidden className="text-text-secondary" />
+              <p className="mt-3 pr-8 text-base font-semibold">{item.label}</p>
+              <p className="mt-1 text-sm leading-relaxed text-text-secondary">{item.texto}</p>
+            </SelectionCard>
+          ))}
+        </div>
+
+        {consultando ? (
+          <p className="flex items-center gap-2 text-sm text-text-secondary">
+            <Loader2 size={16} className="animate-spin" aria-hidden />
+            Consultando a tabela FIPE…
+          </p>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => {
+            setPerguntarTipo(false);
+            setModo("manual");
+          }}
+          className="btn-ghost w-full"
+        >
+          <Search size={16} strokeWidth={1.8} aria-hidden />
+          Prefiro buscar por marca e modelo
+        </button>
+      </div>
+    );
   }
 
   // ------------------------------------------------ confirmação da versão FIPE
@@ -312,7 +407,7 @@ export function StepVeiculo({
           Vamos identificar o seu veículo
         </h1>
         <p className="mt-2 text-base text-text-secondary">
-          Buscamos o valor oficial na tabela FIPE para calcular a sua proteção.
+          Consultamos o valor de referência FIPE para calcular a sua proteção.
         </p>
       </header>
 
@@ -337,14 +432,14 @@ export function StepVeiculo({
                 id="placa"
                 value={placa}
                 onChange={(e) => {
-                  setPlaca(normalizePlaca(e.target.value));
+                  setPlacaLocal(normalizePlaca(e.target.value));
                   setErro(null);
                 }}
                 placeholder="ABC1D23"
                 autoCapitalize="characters"
                 autoComplete="off"
                 spellCheck={false}
-                maxLength={7}
+                maxLength={10}
                 aria-invalid={Boolean(erro)}
                 className="h-14 w-full bg-white px-4 text-lg font-semibold tracking-[0.18em] placeholder:font-normal placeholder:tracking-normal placeholder:text-text-muted focus:outline-none"
               />

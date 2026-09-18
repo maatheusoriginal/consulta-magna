@@ -28,6 +28,8 @@ gratuitas — nenhuma chave de API é necessária para o site funcionar.
 - Carro de aplicativo/táxi: agravo na mensalidade e **somente a participação
   Padrão** disponível. Moto não é perguntada sobre aplicativo/táxi.
 - Bronze **não** cobre incêndio/fenômenos da natureza nem colisão.
+- Moto não é perguntada sobre aplicativo/táxi. Isso **não** significa uso
+  particular: o lead grava `usoDeclarado: null` e a mensagem omite a seção USO.
 
 ## Stack
 
@@ -63,7 +65,7 @@ Todas as variáveis estão documentadas em `.env.example`.
 | `NEXT_PUBLIC_WHATSAPP_NUMERO` | recomendada | `5534991960908` |
 | `LEAD_WEBHOOK_URL` | **sim, em produção** | — |
 | `FIPE_API_URL` | não | Parallelum |
-| `PLACA_API_TOKEN` / `PLACA_API_URL` | não | — |
+| `PLACA_API_URL` | não | — |
 | `NEXT_PUBLIC_TAXA_ADESAO_MINIMA` | não | `300` |
 | `NEXT_PUBLIC_PARTICIPACAO_MINIMA` | não | `1800` |
 | `NEXT_PUBLIC_HIDE_DOMINATED_PARTICIPATION_OPTIONS` | não | `false` |
@@ -103,21 +105,37 @@ POST /api/lead
 ### Consulta por placa (opcional)
 
 Não existe API pública **e gratuita** de consulta por placa — os dados do
-Denatran são restritos. A consulta por placa é um adaptador com provedores
-opcionais:
+Denatran são restritos. Verificamos a documentação da
+[Invertexto](https://api.invertexto.com/) (consultada em setembro de 2026): ela
+oferece Tabela FIPE, CEP, CNPJ, feriados e outras APIs, mas **não** possui
+consulta de placa. A integração específica que existia aqui foi removida por não
+ser confirmável.
 
-- `PLACA_API_TOKEN` — usa a [Invertexto](https://api.invertexto.com), que tem plano gratuito com token;
-- `PLACA_API_URL` — qualquer outro provedor; use `{placa}` como marcador e, se
-  precisar, `PLACA_API_AUTH_HEADER` / `PLACA_API_AUTH_VALUE`.
+Resta a abstração genérica, para o provedor que você contratar:
 
-**Sem nenhuma dessas variáveis o site continua funcional**: ao consultar uma
-placa, a interface avisa e leva o usuário para a busca por marca/modelo/ano, que
-usa apenas a API gratuita da FIPE.
+```bash
+PLACA_API_URL=https://api.exemplo.com/veiculo/{placa}
+PLACA_API_AUTH_HEADER=Authorization
+PLACA_API_AUTH_VALUE=Bearer seu_token
+```
 
-Com um provedor configurado, a correspondência entre o texto devolvido pela placa
-e as versões da FIPE é **aproximada**, então a aplicação **nunca escolhe a versão
-sozinha**: ela lista as versões compatíveis — com modelo, ano, combustível,
-código e valor FIPE — e o usuário confirma qual é a sua.
+**Sem essas variáveis a consulta por placa não é simulada**: a interface avisa e
+encaminha o cliente para a busca por marca/modelo/ano, que funciona apenas com a
+API gratuita da FIPE.
+
+Com um provedor configurado:
+
+- Se ele devolver a **categoria** do veículo (`tipo`, `tipoVeiculo`, `categoria`,
+  `especie`…), ela é normalizada para `carros`, `motos` ou `caminhoes`.
+- Se **não** devolver, a aplicação **não assume carro**: pergunta ao cliente
+  "Que tipo de veículo é?" antes de tocar na FIPE. Uma moto nunca é procurada na
+  tabela de carros.
+- A correspondência com as versões da FIPE é **aproximada**, então a aplicação
+  **nunca escolhe a versão sozinha**: lista as versões compatíveis com modelo,
+  ano, combustível, código e valor FIPE, e o cliente confirma.
+- Um mesmo ano pode ter Gasolina, Flex e Diesel: **todas** as entradas são
+  oferecidas. O combustível informado pela placa só prioriza a ordem da lista,
+  nunca descarta opções.
 
 ### Persistência de leads
 
@@ -132,24 +150,46 @@ Log de servidor **não é persistência de produção**. O `ConsoleLeadRepositor
 grava apenas um resumo sem dados pessoais (telefone mascarado, sem nome, e-mail
 ou placa) e devolve `persistido: false` — o lead nunca é anunciado como salvo.
 
-Em produção sem `LEAD_WEBHOOK_URL`, um aviso explícito é emitido no build
-(`next.config.ts`) e no startup (`criarLeadRepository`).
+**Em produção, sem `LEAD_WEBHOOK_URL` a rota `POST /api/lead` responde `503`** e
+o fluxo não avança até o WhatsApp — a promessa de "salvar o lead antes de abrir o
+WhatsApp" não pode ser cumprida com um sucesso falso. Um aviso explícito também é
+emitido no build (`next.config.ts`) e no startup (`criarLeadRepository`). Em
+desenvolvimento o `ConsoleLeadRepository` continua funcionando normalmente.
 
-O lead persistido é o snapshot completo da cotação: contato, veículo, dados da
-FIPE, tipo de uso, respostas do questionário, plano recomendado, plano escolhido,
-mensalidade, participação, adesão, status da precificação, data/hora e código da
-simulação.
+O lead persistido é o snapshot completo da cotação: contato, **placa**, veículo,
+dados da FIPE, uso declarado, respostas do questionário, plano recomendado, plano
+escolhido, mensalidade, participação, adesão, status da precificação, data/hora,
+`simulationId` (UUID técnico) e `codigo` (MG-XXXXX, amigável).
+
+## Placa do veículo
+
+A placa é uma das informações mais importantes para o consultor, então é
+**obrigatória** para fechar a cotação.
+
+- Quem começa **pela placa**: o valor é guardado no estado do wizard (fora do
+  objeto do veículo) e sobrevive à consulta FIPE, à escolha de versão, a voltar
+  etapas e a trocar de plano ou participação.
+- Quem começa **pela busca manual**: a placa é pedida na tela de resumo, antes do
+  envio do lead. Não há nova consulta de veículo — a placa serve para o registro.
+
+Normalização e validação ficam centralizadas em `src/lib/format.ts`
+(`normalizePlaca`, `isPlacaValida`, `formatPlaca`) — nenhum componente tem regex
+de placa própria. `abc-1d23` e ` abc 1d23 ` viram `ABC1D23`; os padrões antigo
+(ABC1234) e Mercosul (ABC1D23) são aceitos.
 
 ## Fluxo de captura do lead
 
-1. valida nome e telefone (e-mail, se informado);
-2. monta o snapshot definitivo da cotação;
-3. persiste o lead — em caso de falha, o usuário vê o erro e o fluxo **não** avança;
+1. valida nome, telefone e **placa** (e-mail, se informado);
+2. monta o snapshot definitivo da cotação, com `simulationId` e `codigo`;
+3. persiste o lead — em caso de falha, o cliente vê o erro e o fluxo **não** avança;
 4. só então a tela final libera o link do WhatsApp.
 
-O botão final é um único `<a href target="_blank" rel="noopener noreferrer">`,
-sem `window.open`, e a mensagem é montada a partir do snapshot — nenhum veículo,
-valor FIPE, plano ou preço fixo no código.
+O botão "Continuar pelo WhatsApp" só habilita com nome, telefone, placa, veículo,
+versão FIPE e plano válidos. O botão final é um único
+`<a href target="_blank" rel="noopener noreferrer">`, sem `window.open`, e a
+mensagem é montada a partir do snapshot — nenhum veículo, valor FIPE, plano ou
+preço fixo no código. **A placa aparece logo no início da mensagem**, antes dos
+dados do veículo.
 
 ## Estrutura
 

@@ -7,25 +7,29 @@ import type { FipeItem, FipeVeiculo, TipoVeiculo } from "./types";
 /**
  * Consulta de placa.
  *
- * Não existe API pública e gratuita de consulta por placa (os dados do Denatran
- * são restritos), então este módulo trabalha com provedores opcionais:
+ * Não existe API pública e gratuita de consulta por placa — os dados do
+ * Denatran são restritos. Verificamos a documentação da Invertexto
+ * (https://api.invertexto.com/, consultada em setembro de 2026): ela oferece
+ * Tabela FIPE, CEP, CNPJ, feriados e outras APIs, mas **não** possui consulta
+ * de placa. A integração específica que existia aqui foi removida por não ser
+ * confirmável.
  *
- *  - `PLACA_API_TOKEN`: usa a API da Invertexto (https://api.invertexto.com), que
- *    possui plano gratuito com token;
- *  - `PLACA_API_URL`: qualquer provedor próprio. Use `{placa}` como marcador na
- *    URL e, se necessário, `PLACA_API_AUTH_HEADER` / `PLACA_API_AUTH_VALUE`.
+ * Restou apenas a abstração genérica: configure `PLACA_API_URL` apontando para
+ * o provedor que você contratar, usando `{placa}` como marcador, e
+ * opcionalmente `PLACA_API_AUTH_HEADER` / `PLACA_API_AUTH_VALUE`.
  *
- * Sem provedor configurado a consulta responde `configurado: false` e a interface
- * encaminha o usuário para a busca por marca/modelo/ano — que usa apenas a API
- * gratuita da FIPE e mantém o fluxo funcional sem nenhuma chave.
+ * Sem provedor configurado a consulta responde `configurado: false` e a
+ * interface encaminha o usuário para a busca por marca/modelo/ano — que usa
+ * apenas a API gratuita da FIPE e mantém o fluxo funcional sem nenhuma chave.
+ * Nunca fingimos que a consulta por placa funcionou.
  *
- * IMPORTANTE: o retorno é sempre uma LISTA DE CANDIDATOS. A correspondência
- * entre o texto devolvido pelo provedor de placa e as versões da FIPE é
- * aproximada, então a escolha da versão é sempre do usuário — nunca automática.
+ * A correspondência entre o texto devolvido pelo provedor e as versões da FIPE
+ * é aproximada, então o retorno é sempre uma LISTA DE CANDIDATOS: a escolha da
+ * versão é do usuário.
  */
 
 /** Quantidade máxima de versões oferecidas para o usuário escolher. */
-const MAX_CANDIDATOS = 6;
+const MAX_CANDIDATOS = 8;
 
 export interface DadosPlaca {
   placa: string;
@@ -33,16 +37,63 @@ export interface DadosPlaca {
   modelo?: string;
   ano?: number;
   combustivel?: string;
+  /** Categoria informada pelo provedor, já normalizada. */
+  tipo?: TipoVeiculo;
 }
 
 export interface ResultadoPlaca {
   configurado: boolean;
   dados?: DadosPlaca;
   /**
-   * Versões da FIPE compatíveis com os dados da placa, para o usuário confirmar.
-   * Vazio quando não foi possível montar candidatos confiáveis.
+   * `true` quando nem o provedor nem quem chamou informaram a categoria do
+   * veículo. A interface precisa perguntar antes de buscar na FIPE — assumir
+   * "carros" faria uma moto ser pesquisada na tabela de carros.
    */
+  precisaTipoVeiculo?: boolean;
+  /** Versões compatíveis. A escolha é sempre do usuário — nunca automática. */
   candidatos: FipeVeiculo[];
+}
+
+/**
+ * Normaliza a categoria devolvida pelo provedor de placa para o vocabulário da
+ * FIPE. Devolve `undefined` quando não reconhece — nunca chuta "carros".
+ */
+export function normalizarTipoVeiculoPlaca(valor: unknown): TipoVeiculo | undefined {
+  if (valor === null || valor === undefined) return undefined;
+
+  const texto = String(valor)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+  if (!texto) return undefined;
+
+  const CARROS = ["CARRO", "CARROS", "AUTOMOVEL", "AUTOMOVEIS", "AUTO", "CAR", "PASSEIO", "1"];
+  const MOTOS = [
+    "MOTO",
+    "MOTOS",
+    "MOTOCICLETA",
+    "MOTOCICLO",
+    "MOTORCYCLE",
+    "CICLOMOTOR",
+    "TRICICLO",
+    "2",
+  ];
+  const CAMINHOES = [
+    "CAMINHAO",
+    "CAMINHOES",
+    "TRUCK",
+    "CAMINHAOTRATOR",
+    "ONIBUS",
+    "MICROONIBUS",
+    "3",
+  ];
+
+  if (CARROS.includes(texto)) return "carros";
+  if (MOTOS.includes(texto)) return "motos";
+  if (CAMINHOES.includes(texto)) return "caminhoes";
+  return undefined;
 }
 
 function normalizarTexto(texto: string): string {
@@ -78,24 +129,18 @@ function ordenarPorAderencia(alvo: string | undefined, itens: FipeItem[]): FipeI
 }
 
 async function consultarProvedor(placa: string): Promise<DadosPlaca | null> {
-  const token = process.env.PLACA_API_TOKEN;
-  const urlCustomizada = process.env.PLACA_API_URL;
+  const urlConfigurada = process.env.PLACA_API_URL;
+  if (!urlConfigurada) return null;
 
-  let url: string | undefined;
   const headers: Record<string, string> = { Accept: "application/json" };
+  const nomeHeader = process.env.PLACA_API_AUTH_HEADER;
+  const valorHeader = process.env.PLACA_API_AUTH_VALUE;
+  if (nomeHeader && valorHeader) headers[nomeHeader] = valorHeader;
 
-  if (urlCustomizada) {
-    url = urlCustomizada.replace("{placa}", encodeURIComponent(placa));
-    const nomeHeader = process.env.PLACA_API_AUTH_HEADER;
-    const valorHeader = process.env.PLACA_API_AUTH_VALUE;
-    if (nomeHeader && valorHeader) headers[nomeHeader] = valorHeader;
-  } else if (token) {
-    url = `https://api.invertexto.com/v1/placa/${encodeURIComponent(placa)}?token=${encodeURIComponent(token)}`;
-  }
-
-  if (!url) return null;
-
-  const resposta = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
+  const resposta = await fetch(urlConfigurada.replace("{placa}", encodeURIComponent(placa)), {
+    headers,
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!resposta.ok) return null;
 
   const bruto = (await resposta.json()) as Record<string, unknown>;
@@ -117,6 +162,9 @@ async function consultarProvedor(placa: string): Promise<DadosPlaca | null> {
     modelo: texto(["modelo", "model"]),
     ano: Number.isFinite(ano) && ano > 1900 ? ano : undefined,
     combustivel: texto(["combustivel", "fuel"]),
+    tipo: normalizarTipoVeiculoPlaca(
+      bruto.tipoVeiculo ?? bruto.tipo ?? bruto.categoria ?? bruto.segmento ?? bruto.especie,
+    ),
   };
 
   return dados.marca || dados.modelo ? dados : null;
@@ -125,8 +173,9 @@ async function consultarProvedor(placa: string): Promise<DadosPlaca | null> {
 /**
  * Monta a lista de versões da FIPE compatíveis com os dados da placa.
  *
- * Nunca devolve "a melhor" escolhida por conta própria: devolve todas as
- * candidatas relevantes, já com código e valor FIPE, para o usuário confirmar.
+ * Considera TODAS as entradas do ano informado — um mesmo ano pode ter Gasolina,
+ * Flex e Diesel — e usa o combustível da placa apenas para priorizar, nunca para
+ * decidir sozinho. Nenhuma mensalidade é calculada aqui.
  */
 async function montarCandidatos(dados: DadosPlaca, tipo: TipoVeiculo): Promise<FipeVeiculo[]> {
   // Sem o ano não dá para apurar valor FIPE: a busca manual é o caminho.
@@ -140,33 +189,55 @@ async function montarCandidatos(dados: DadosPlaca, tipo: TipoVeiculo): Promise<F
   const compativeis = ordenarPorAderencia(dados.modelo, modelos).slice(0, MAX_CANDIDATOS);
   if (compativeis.length === 0) return [];
 
-  const candidatos = await Promise.all(
+  const listas = await Promise.all(
     compativeis.map(async (modelo) => {
       try {
         const anos = await listarAnos(tipo, marca.codigo, modelo.codigo);
-        const ano = anos.find((a) => a.nome.startsWith(String(dados.ano)));
-        if (!ano) return null;
-        return await consultarPreco(tipo, marca.codigo, modelo.codigo, ano.codigo);
+        // Todas as entradas daquele ano, não apenas a primeira.
+        const doAno = anos.filter((a) => a.nome.startsWith(`${dados.ano} `) || a.nome === String(dados.ano));
+
+        return await Promise.all(
+          doAno.map(async (ano) => {
+            try {
+              return await consultarPreco(tipo, marca.codigo, modelo.codigo, ano.codigo);
+            } catch {
+              return null;
+            }
+          }),
+        );
       } catch {
         // Uma versão que falhou não pode derrubar as demais.
-        return null;
+        return [];
       }
     }),
   );
 
-  return candidatos
-    .filter((c): c is FipeVeiculo => c !== null)
-    .map((c) => ({ ...c, placa: dados.placa }));
+  const candidatos = listas.flat().filter((c): c is FipeVeiculo => c !== null);
+
+  // O combustível da placa só prioriza a ordem; nada é descartado por causa dele.
+  const alvoCombustivel = dados.combustivel ? normalizarTexto(dados.combustivel) : null;
+  const ordenados = alvoCombustivel
+    ? [...candidatos].sort(
+        (a, b) =>
+          pontuar(alvoCombustivel, b.combustivel) - pontuar(alvoCombustivel, a.combustivel),
+      )
+    : candidatos;
+
+  return ordenados.slice(0, MAX_CANDIDATOS).map((c) => ({ ...c, placa: dados.placa }));
 }
 
 export async function consultarPlaca(
   placaBruta: string,
-  tipo: TipoVeiculo = "carros",
+  tipoInformado?: TipoVeiculo,
 ): Promise<ResultadoPlaca> {
   const placa = normalizePlaca(placaBruta);
   const dados = await consultarProvedor(placa);
 
   if (!dados) return { configurado: false, candidatos: [] };
+
+  // Sem categoria conhecida não pesquisamos: a interface pergunta ao usuário.
+  const tipo = tipoInformado ?? dados.tipo;
+  if (!tipo) return { configurado: true, dados, precisaTipoVeiculo: true, candidatos: [] };
 
   try {
     return { configurado: true, dados, candidatos: await montarCandidatos(dados, tipo) };

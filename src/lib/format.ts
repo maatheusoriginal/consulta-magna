@@ -29,15 +29,32 @@ export function parseValorFipe(valor: string): number {
   return Number.isFinite(numero) ? numero : 0;
 }
 
-/** Normaliza placa para 7 caracteres alfanuméricos maiúsculos */
+// ----------------------------------------------------------------------------
+// Placa — helpers centralizados. Nenhum componente deve ter regex de placa.
+// ----------------------------------------------------------------------------
+
+/** Padrão brasileiro antigo: ABC1234 */
+const PLACA_ANTIGA = /^[A-Z]{3}\d{4}$/;
+/** Padrão Mercosul: ABC1D23 */
+const PLACA_MERCOSUL = /^[A-Z]{3}\d[A-Z]\d{2}$/;
+
+/**
+ * Normaliza a placa: maiúsculas, sem espaços, hífens ou qualquer outro
+ * caractere. `abc-1d23` e ` abc 1d23 ` viram `ABC1D23`.
+ */
 export function normalizePlaca(placa: string): string {
-  return placa.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7);
+  return placa
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 7);
 }
 
-/** Aceita padrão antigo (ABC1234) e Mercosul (ABC1D23) */
+/** Aceita o padrão brasileiro antigo (ABC1234) e o Mercosul (ABC1D23). */
 export function isPlacaValida(placa: string): boolean {
   const p = normalizePlaca(placa);
-  return /^[A-Z]{3}\d{4}$/.test(p) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(p);
+  return PLACA_ANTIGA.test(p) || PLACA_MERCOSUL.test(p);
 }
 
 /** Exibe BRA2E19 como BRA-2E19 */

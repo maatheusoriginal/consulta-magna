@@ -1,10 +1,22 @@
 import type { CotacaoSnapshot } from "./leads/types";
+import { normalizePlaca } from "./format";
 import type { ParticipacaoPrecificada, PricingStatus } from "./pricing/types";
-import type { FipeVeiculo, Lead, PerfilRespostas, PlanoId } from "./types";
+import {
+  finalidadeNaoAlteraCotacao,
+  type FipeVeiculo,
+  type Lead,
+  type PerfilRespostas,
+  type PlanoId,
+} from "./types";
 
-/** Gera um código legível para a simulação, exibido ao usuário e enviado no lead. */
+/** Código legível da simulação, exibido ao cliente e usado pelo consultor. */
 export function gerarCodigoSimulacao(): string {
   return `MG-${Math.floor(10_000 + Math.random() * 89_999)}`;
+}
+
+/** Identificador técnico único da simulação. */
+export function gerarSimulationId(): string {
+  return crypto.randomUUID();
 }
 
 /**
@@ -12,9 +24,14 @@ export function gerarCodigoSimulacao(): string {
  *
  * É a única fonte de verdade usada depois desta etapa: o lead é persistido a
  * partir dele e a mensagem do WhatsApp é montada a partir dele.
+ *
+ * A placa é obrigatória e vem sempre do que o cliente informou — nunca é
+ * inferida a partir da FIPE.
  */
 export function montarSnapshot(entrada: {
+  simulationId: string;
   codigo: string;
+  placa: string;
   veiculo: FipeVeiculo;
   perfil: PerfilRespostas;
   planoRecomendado: PlanoId;
@@ -25,8 +42,20 @@ export function montarSnapshot(entrada: {
   lead: Lead;
 }): CotacaoSnapshot {
   const { finalidade, ...respostasQuestionario } = entrada.perfil;
+  const placa = normalizePlaca(entrada.placa);
+
+  if (!placa) throw new Error("A cotação não pode ser fechada sem a placa do veículo.");
+
+  // Em moto a finalidade não é perguntada, então não há uso declarado.
+  const perguntamosAFinalidade = !finalidadeNaoAlteraCotacao(entrada.veiculo.tipo);
+  const usoDeclarado = perguntamosAFinalidade
+    ? finalidade === "aplicativo"
+      ? ("Aplicativo / Táxi" as const)
+      : ("Particular" as const)
+    : null;
 
   return {
+    simulationId: entrada.simulationId,
     codigo: entrada.codigo,
     criadoEm: new Date().toISOString(),
 
@@ -34,7 +63,7 @@ export function montarSnapshot(entrada: {
     telefone: entrada.lead.whatsapp.replace(/\D/g, ""),
     email: entrada.lead.email,
 
-    placa: entrada.veiculo.placa,
+    placa,
     tipoVeiculo: entrada.veiculo.tipo,
     marca: entrada.veiculo.marca,
     // A FIPE devolve modelo e versão num campo só; guardamos os dois para o CRM.
@@ -46,7 +75,8 @@ export function montarSnapshot(entrada: {
     valorFipe: entrada.veiculo.valor,
     mesReferenciaFipe: entrada.veiculo.mesReferencia,
 
-    tipoUso: finalidade === "aplicativo" ? "Aplicativo / Táxi" : "Particular",
+    usoDeclarado,
+    usoParaPrecificacao: usoDeclarado === "Aplicativo / Táxi" ? "COMERCIAL" : "STANDARD",
     respostasQuestionario,
 
     planoRecomendado: entrada.planoRecomendado,

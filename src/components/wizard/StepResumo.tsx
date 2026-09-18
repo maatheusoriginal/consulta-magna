@@ -1,18 +1,31 @@
 "use client";
 
-import { CircleAlert, Info, Loader2, Mail, MessageCircle, Phone, ShieldCheck, User } from "lucide-react";
+import {
+  CircleAlert,
+  CreditCard,
+  Info,
+  Loader2,
+  Mail,
+  MessageCircle,
+  Phone,
+  ShieldCheck,
+  User,
+} from "lucide-react";
 import { useState } from "react";
 
 import { ListaCoberturas } from "@/components/ListaCoberturas";
 import { postJson } from "@/lib/client-api";
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
-import { montarSnapshot } from "@/lib/cotacao";
+import { gerarCodigoSimulacao, gerarSimulationId, montarSnapshot } from "@/lib/cotacao";
 import {
   formatBRL,
   formatPercentual,
+  formatPlaca,
   formatWhatsApp,
   isEmailValido,
+  isPlacaValida,
   isWhatsAppValido,
+  normalizePlaca,
 } from "@/lib/format";
 import type { CotacaoSnapshot } from "@/lib/leads/types";
 import { useWizard } from "@/lib/wizard";
@@ -25,12 +38,14 @@ export function StepResumo() {
     planoSelecionado,
     preco,
     participacao,
+    placa,
+    setPlaca,
     concluir,
-    gerarCodigo,
     irPara,
   } = useWizard();
 
   const [nome, setNome] = useState("");
+  const [placaDigitada, setPlacaDigitada] = useState(placa);
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
   const [erros, setErros] = useState<Record<string, string>>({});
@@ -49,24 +64,34 @@ export function StepResumo() {
     return null;
   }
 
+  const placaFinal = normalizePlaca(placaDigitada || placa);
+
   async function enviar(evento: React.FormEvent) {
     evento.preventDefault();
     setErroEnvio(null);
 
-    // 1 e 2 — validação de nome e telefone antes de qualquer outra coisa.
+    // 1, 2 e 3 — validação de nome, telefone e placa antes de qualquer outra coisa.
     const novosErros: Record<string, string> = {};
     if (nome.trim().length < 2) novosErros.nome = "Informe seu nome completo.";
     if (!isWhatsAppValido(whatsapp)) novosErros.whatsapp = "Informe um WhatsApp válido com DDD.";
     if (email && !isEmailValido(email)) novosErros.email = "E-mail inválido.";
+    if (!isPlacaValida(placaFinal)) {
+      novosErros.placa = "Informe a placa do veículo (ABC1234 ou ABC1D23).";
+    }
 
     setErros(novosErros);
     if (Object.keys(novosErros).length > 0) return;
 
+    // A placa fica guardada no wizard antes de seguir.
+    setPlaca(placaFinal);
+
     const lead = { nome: nome.trim(), whatsapp, email: email.trim() || undefined };
 
-    // 3 — snapshot definitivo da cotação que o usuário acabou de fazer.
+    // 4 — snapshot definitivo da cotação que o usuário acabou de fazer.
     const snapshot: CotacaoSnapshot = montarSnapshot({
-      codigo: gerarCodigo(),
+      simulationId: gerarSimulationId(),
+      codigo: gerarCodigoSimulacao(),
+      placa: placaFinal,
       veiculo: veiculo!,
       perfil: perfilCompleto!,
       planoRecomendado: recomendado!.plano.id,
@@ -79,7 +104,7 @@ export function StepResumo() {
 
     setEnviando(true);
     try {
-      // 4 — persistir o lead. Só avançamos depois que ele foi aceito.
+      // 5 — persistir o lead. Só avançamos depois que ele foi aceito.
       await postJson("/api/lead", snapshot);
     } catch (e) {
       setErroEnvio(
@@ -92,10 +117,16 @@ export function StepResumo() {
       setEnviando(false);
     }
 
-    // 5 — só agora o WhatsApp fica disponível, montado a partir do snapshot.
+    // 6 — só agora o WhatsApp fica disponível, montado a partir do snapshot.
     concluir(lead, snapshot);
     irPara("whatsapp");
   }
+
+  const podeConcluir =
+    nome.trim().length >= 2 &&
+    isWhatsAppValido(whatsapp) &&
+    isPlacaValida(placaFinal) &&
+    (!email || isEmailValido(email));
 
   const carencias = planoSelecionado.coberturas
     .filter((c) => c.nota)
@@ -126,6 +157,9 @@ export function StepResumo() {
             FIPE {formatBRL(veiculo.valor)} · cód. {veiculo.codigoFipe}
             {veiculo.mesReferencia ? ` · ref. ${veiculo.mesReferencia}` : ""}
           </p>
+          {isPlacaValida(placaFinal) ? (
+            <p className="mt-2 text-sm font-semibold">Placa {formatPlaca(placaFinal)}</p>
+          ) : null}
         </div>
 
         <div className="space-y-5 p-5">
@@ -193,6 +227,37 @@ export function StepResumo() {
         </p>
 
         <form onSubmit={enviar} noValidate className="mt-6 space-y-4">
+          {/* A placa é obrigatória para o consultor. Quem entrou pela busca
+              manual informa aqui; quem veio pela placa já tem o campo preenchido. */}
+          {isPlacaValida(placa) ? null : (
+            <div>
+              <label htmlFor="placa-resumo" className="field-label">
+                Placa do veículo
+              </label>
+              <div className="relative">
+                <CreditCard
+                  size={18}
+                  strokeWidth={1.8}
+                  aria-hidden
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-text-muted"
+                />
+                <input
+                  id="placa-resumo"
+                  value={placaDigitada}
+                  onChange={(e) => setPlacaDigitada(normalizePlaca(e.target.value))}
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={10}
+                  placeholder="ABC1D23"
+                  aria-invalid={Boolean(erros.placa)}
+                  className="field-input pl-11 tracking-[0.18em]"
+                />
+              </div>
+              {erros.placa ? <p className="mt-1.5 text-sm text-primary">{erros.placa}</p> : null}
+            </div>
+          )}
+
           <div>
             <label htmlFor="nome" className="field-label">
               Nome completo
@@ -276,10 +341,10 @@ export function StepResumo() {
 
           <p className="flex items-start gap-2 text-xs leading-relaxed text-text-secondary">
             <ShieldCheck size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-primary" aria-hidden />
-            Seus dados estão protegidos e são usados apenas para este atendimento.
+            Seus dados serão utilizados para dar continuidade ao atendimento.
           </p>
 
-          <button type="submit" disabled={enviando} className="btn-whatsapp">
+          <button type="submit" disabled={enviando || !podeConcluir} className="btn-whatsapp">
             {enviando ? (
               <>
                 <Loader2 size={18} className="animate-spin" aria-hidden />

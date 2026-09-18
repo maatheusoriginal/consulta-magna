@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { EstimatedPricingProvider } from "@/lib/pricing";
 import { recomendarPlano, type RespostasQuestionario } from "@/lib/recomendacao";
-import { exigeUsoParticular } from "@/lib/types";
+import { finalidadeNaoAlteraCotacao } from "@/lib/types";
 
 const BASE: RespostasQuestionario = {
   prioridade: "roubo",
@@ -152,12 +152,12 @@ describe("recomendação restrita aos planos da categoria", () => {
 
 describe("finalidade por categoria", () => {
   it("moto não pergunta Aplicativo/Táxi: a finalidade é sempre particular", () => {
-    expect(exigeUsoParticular("motos")).toBe(true);
+    expect(finalidadeNaoAlteraCotacao("motos")).toBe(true);
   });
 
   it("carro e caminhão mantêm a pergunta de finalidade", () => {
-    expect(exigeUsoParticular("carros")).toBe(false);
-    expect(exigeUsoParticular("caminhoes")).toBe(false);
+    expect(finalidadeNaoAlteraCotacao("carros")).toBe(false);
+    expect(finalidadeNaoAlteraCotacao("caminhoes")).toBe(false);
   });
 
   it("a tela de perfil esconde a seção de finalidade quando ela é fixa", () => {
@@ -176,7 +176,7 @@ describe("finalidade por categoria", () => {
 
   it("o wizard fixa a finalidade em particular para moto", () => {
     const fonte = readFileSync(resolve(__dirname, "../src/lib/wizard.tsx"), "utf8");
-    expect(fonte).toContain("exigeUsoParticular(veiculo.tipo)");
+    expect(fonte).toContain("finalidadeNaoAlteraCotacao(veiculo.tipo)");
     expect(fonte).toContain('{ ...estado.perfil, finalidade: "particular" }');
   });
 });

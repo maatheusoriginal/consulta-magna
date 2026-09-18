@@ -10,10 +10,11 @@ import {
   type ReactNode,
 } from "react";
 
-import { gerarCodigoSimulacao } from "./cotacao";
+
 import type { CotacaoSnapshot } from "./leads/types";
 import { getPlano, planosDisponiveis } from "./planos";
 import { pricingProvider } from "./pricing";
+import { normalizePlaca } from "./format";
 import type {
   ParticipacaoPrecificada,
   PrecoDisponivel,
@@ -22,7 +23,7 @@ import type {
 import { recomendarPlano, type Recomendacao } from "./recomendacao";
 import {
   categoriaDoTipo,
-  exigeUsoParticular,
+  finalidadeNaoAlteraCotacao,
   type FipeVeiculo,
   type Lead,
   type ParticipacaoId,
@@ -48,6 +49,12 @@ export type TelaId = (typeof TELAS)[number]["id"];
 
 interface EstadoWizard {
   tela: TelaId;
+  /**
+   * Placa informada pelo cliente, normalizada. Vive fora de `veiculo` de
+   * propósito: ela precisa sobreviver a trocas de veículo, de versão, de plano
+   * e a idas e vindas entre etapas.
+   */
+  placa: string;
   veiculo: FipeVeiculo | null;
   perfil: Partial<PerfilRespostas>;
   planoId: PlanoId | null;
@@ -58,6 +65,7 @@ interface EstadoWizard {
 
 const ESTADO_INICIAL: EstadoWizard = {
   tela: "veiculo",
+  placa: "",
   veiculo: null,
   perfil: {},
   planoId: null,
@@ -104,11 +112,11 @@ interface ContextoWizard extends EstadoWizard {
   irPara: (tela: TelaId) => void;
   voltar: () => void;
   setVeiculo: (veiculo: FipeVeiculo | null) => void;
+  setPlaca: (placa: string) => void;
   setPerfil: (parcial: Partial<PerfilRespostas>) => void;
   setPlano: (id: PlanoId) => void;
   setParticipacao: (id: ParticipacaoId) => void;
   concluir: (lead: Lead, snapshot: CotacaoSnapshot) => void;
-  gerarCodigo: () => string;
   reiniciar: () => void;
 }
 
@@ -156,7 +164,16 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setVeiculo = useCallback((veiculo: FipeVeiculo | null) => {
-    setEstado((atual) => ({ ...atual, veiculo }));
+    setEstado((atual) => ({
+      ...atual,
+      veiculo,
+      // Uma placa já informada nunca se perde ao trocar de veículo ou versão.
+      placa: atual.placa || normalizePlaca(veiculo?.placa ?? ""),
+    }));
+  }, []);
+
+  const setPlaca = useCallback((placa: string) => {
+    setEstado((atual) => ({ ...atual, placa: normalizePlaca(placa) }));
   }, []);
 
   const setPerfil = useCallback((parcial: Partial<PerfilRespostas>) => {
@@ -175,8 +192,6 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setEstado((atual) => ({ ...atual, lead, snapshot }));
   }, []);
 
-  const gerarCodigo = useCallback(() => gerarCodigoSimulacao(), []);
-
   const reiniciar = useCallback(() => {
     setEstado(ESTADO_INICIAL);
     try {
@@ -191,7 +206,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     const categoria = veiculo ? categoriaDoTipo(veiculo.tipo) : null;
 
     // Moto não roda em aplicativo/táxi: a finalidade é sempre particular.
-    const finalidadeFixa = veiculo ? exigeUsoParticular(veiculo.tipo) : false;
+    const finalidadeFixa = veiculo ? finalidadeNaoAlteraCotacao(veiculo.tipo) : false;
     const perfil: Partial<PerfilRespostas> = finalidadeFixa
       ? { ...estado.perfil, finalidade: "particular" }
       : estado.perfil;
@@ -267,11 +282,11 @@ export function WizardProvider({ children }: { children: ReactNode }) {
       irPara,
       voltar,
       setVeiculo,
+      setPlaca,
       setPerfil,
       setPlano,
       setParticipacao,
       concluir,
-      gerarCodigo,
       reiniciar,
     };
   }, [
@@ -280,11 +295,11 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     irPara,
     voltar,
     setVeiculo,
+    setPlaca,
     setPerfil,
     setPlano,
     setParticipacao,
     concluir,
-    gerarCodigo,
     reiniciar,
   ]);
 

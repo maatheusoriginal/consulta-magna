@@ -1,9 +1,11 @@
-import type { PerfilRespostas, PlanoId, TipoVeiculo } from "../types";
+import type { PerfilRespostas, PlanoId, TipoVeiculo, UsoPrecificacao } from "../types";
 import type { PricingStatus } from "../pricing/types";
 
 /** Snapshot definitivo da cotação, montado no momento em que o lead é capturado. */
 export interface CotacaoSnapshot {
-  /** Código/id legível da simulação, ex.: MG-48213 */
+  /** Identificador técnico único da simulação (UUID). */
+  simulationId: string;
+  /** Código legível para cliente e consultor, ex.: MG-48213 */
   codigo: string;
   criadoEm: string;
 
@@ -13,7 +15,8 @@ export interface CotacaoSnapshot {
   email?: string;
 
   // Veículo
-  placa?: string;
+  /** Placa normalizada (ABC1D23). Obrigatória: o consultor depende dela. */
+  placa: string;
   tipoVeiculo: TipoVeiculo;
   marca: string;
   modelo: string;
@@ -25,7 +28,14 @@ export interface CotacaoSnapshot {
   mesReferenciaFipe: string;
 
   // Perfil
-  tipoUso: "Particular" | "Aplicativo / Táxi";
+  /**
+   * Uso declarado pelo cliente. `null` quando a pergunta não foi feita — em
+   * moto a finalidade não altera a cotação, e registrar "Particular" sem o
+   * cliente ter declarado seria falso.
+   */
+  usoDeclarado: "Particular" | "Aplicativo / Táxi" | null;
+  /** Faixa de uso efetivamente aplicada na precificação. */
+  usoParaPrecificacao: UsoPrecificacao;
   respostasQuestionario: Omit<PerfilRespostas, "finalidade">;
 
   // Cotação

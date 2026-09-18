@@ -10,13 +10,14 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const placa = params.get("placa") ?? "";
-  const tipo = params.get("tipo") ?? "carros";
+  const tipoBruto = params.get("tipo");
 
-  if (!isTipoVeiculo(tipo)) return erro("Tipo de veículo inválido.");
+  // Sem `tipo` a consulta NÃO assume carros: quem decide é o provedor ou o usuário.
+  if (tipoBruto !== null && !isTipoVeiculo(tipoBruto)) return erro("Tipo de veículo inválido.");
   if (!isPlacaValida(placa)) return erro("Placa inválida. Use o padrão ABC1234 ou ABC1D23.");
 
   try {
-    return NextResponse.json(await consultarPlaca(placa, tipo));
+    return NextResponse.json(await consultarPlaca(placa, tipoBruto ?? undefined));
   } catch (e) {
     return tratarErro(e);
   }

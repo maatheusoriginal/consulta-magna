@@ -14,13 +14,18 @@ export function categoriaDoTipo(tipo: TipoVeiculo): CategoriaVeiculo {
 }
 
 /**
- * Categorias que não admitem uso em aplicativo/táxi.
+ * Categorias em que a finalidade (particular ou aplicativo/táxi) não altera a
+ * cotação e por isso não é perguntada.
  *
- * Para elas a finalidade é sempre particular e a pergunta não é exibida.
+ * Importante: não perguntar NÃO significa que o uso seja particular. Nesses
+ * casos o uso declarado fica vazio e a precificação usa a faixa padrão.
  */
-export function exigeUsoParticular(tipo: TipoVeiculo): boolean {
+export function finalidadeNaoAlteraCotacao(tipo: TipoVeiculo): boolean {
   return categoriaDoTipo(tipo) === "MOTORCYCLE";
 }
+
+/** Faixa de uso considerada pela precificação. */
+export type UsoPrecificacao = "STANDARD" | "COMERCIAL";
 
 export interface FipeItem {
   codigo: string;

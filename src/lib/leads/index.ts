@@ -10,6 +10,10 @@ export type {
   ResultadoPersistencia,
 } from "./types";
 
+/** Resposta ao cliente quando não há destino durável para o lead. */
+export const MENSAGEM_SEM_PERSISTENCIA =
+  "O canal de registro da simulação está temporariamente indisponível. Tente novamente.";
+
 export const AVISO_SEM_PERSISTENCIA =
   "[leads] LEAD_WEBHOOK_URL não está configurada. Os leads NÃO serão persistidos — " +
   "o ConsoleLeadRepository apenas registra um resumo no log do servidor. " +

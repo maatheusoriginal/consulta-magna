@@ -64,7 +64,7 @@ const DUVIDAS = [
   {
     pergunta: "De onde vem o valor FIPE mostrado na cotação?",
     resposta:
-      "Consultamos a tabela FIPE oficial em tempo real por APIs públicas e gratuitas, sempre no mês de referência mais recente. O código FIPE do veículo aparece na tela para você conferir.",
+      "Fazemos a consulta à tabela FIPE em tempo real por APIs públicas e gratuitas que espelham os dados da Fundação FIPE, sempre no mês de referência mais recente. O código FIPE do veículo aparece na tela para você conferir.",
   },
   {
     pergunta: "Existe carência?",

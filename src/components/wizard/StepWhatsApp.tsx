@@ -3,7 +3,7 @@
 import { Check, MessageCircle, RotateCcw, ShieldCheck } from "lucide-react";
 
 import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, formatPlaca } from "@/lib/format";
 import { whatsAppService } from "@/lib/whatsapp";
 import { useWizard } from "@/lib/wizard";
 
@@ -51,6 +51,10 @@ export function StepWhatsApp() {
             <dd className="font-semibold">#{snapshot.codigo}</dd>
           </div>
           <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-text-secondary">Placa</dt>
+            <dd className="font-semibold">{formatPlaca(snapshot.placa)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
             <dt className="text-text-secondary">Veículo</dt>
             <dd className="text-right font-semibold">
               {snapshot.marca} {snapshot.modelo.split(" ")[0]} {snapshot.ano}
@@ -60,10 +64,12 @@ export function StepWhatsApp() {
             <dt className="text-text-secondary">Valor FIPE</dt>
             <dd className="font-semibold">{formatBRL(snapshot.valorFipe)}</dd>
           </div>
-          <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-text-secondary">Uso</dt>
-            <dd className="font-semibold">{snapshot.tipoUso}</dd>
-          </div>
+          {snapshot.usoDeclarado ? (
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="text-text-secondary">Uso</dt>
+              <dd className="font-semibold">{snapshot.usoDeclarado}</dd>
+            </div>
+          ) : null}
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-text-secondary">Plano</dt>
             <dd className="font-semibold">{planoSelecionado.nome}</dd>
@@ -138,7 +144,7 @@ export function StepWhatsApp() {
 
       <p className="flex items-center justify-center gap-1.5 text-xs text-text-muted">
         <ShieldCheck size={14} strokeWidth={1.8} aria-hidden />
-        Ambiente seguro · Atendimento Magna
+        Atendimento Magna
       </p>
     </div>
   );

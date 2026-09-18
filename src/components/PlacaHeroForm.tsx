@@ -43,7 +43,7 @@ export function PlacaHeroForm() {
             autoCapitalize="characters"
             autoComplete="off"
             spellCheck={false}
-            maxLength={7}
+            maxLength={10}
             aria-invalid={Boolean(erro)}
             aria-describedby={erro ? "placa-hero-erro" : undefined}
             className="h-14 w-full bg-white px-4 text-lg font-semibold tracking-[0.18em] text-text-primary placeholder:font-normal placeholder:tracking-normal placeholder:text-text-muted focus:outline-none"

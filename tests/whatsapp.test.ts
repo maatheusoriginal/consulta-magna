@@ -24,7 +24,9 @@ function cotacaoDeTeste(): CotacaoSnapshot {
   const padrao = preco.participacoes.find((p) => p.id === "padrao")!;
 
   return montarSnapshot({
+    simulationId: "7c1f2d3e-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
     codigo: "MG-48213",
+    placa: "BRA2E19",
     veiculo: {
       tipo: "carros",
       marcaCodigo: "59",
@@ -121,9 +123,10 @@ describe("mensagem final", () => {
 
   it("segue o formato acordado", () => {
     for (const secao of [
-      "NOME",
-      "VEÍCULO",
-      "FIPE",
+      "🚗 PLACA",
+      "👤 CLIENTE",
+      "🚘 VEÍCULO",
+      "📊 FIPE",
       "USO",
       "PLANO",
       "MENSALIDADE",
@@ -134,7 +137,33 @@ describe("mensagem final", () => {
     }
 
     expect(mensagem.startsWith("Olá! Fiz uma simulação pelo site")).toBe(true);
+    expect(mensagem).toContain("Código da simulação:");
     expect(mensagem.endsWith("Gostaria de continuar o atendimento.")).toBe(true);
+  });
+
+  it("coloca a placa entre as primeiras informações, antes do veículo", () => {
+    const posPlaca = mensagem.indexOf("🚗 PLACA");
+    const posCliente = mensagem.indexOf("👤 CLIENTE");
+    const posVeiculo = mensagem.indexOf("🚘 VEÍCULO");
+    const posFipe = mensagem.indexOf("📊 FIPE");
+
+    expect(posPlaca).toBeGreaterThan(-1);
+    expect(posPlaca).toBeLessThan(posCliente);
+    expect(posPlaca).toBeLessThan(posVeiculo);
+    expect(posPlaca).toBeLessThan(posFipe);
+    // Está no começo, não escondida no fim.
+    expect(posPlaca / mensagem.length).toBeLessThan(0.2);
+  });
+
+  it("contém a placa exatamente como o cliente informou", () => {
+    expect(mensagem).toContain("BRA-2E19");
+    expect(mensagem).not.toMatch(/Placa não informada/i);
+  });
+
+  it("recusa montar a mensagem sem placa", () => {
+    expect(() =>
+      whatsAppService.montarMensagem({ ...cotacao, placa: "" }),
+    ).toThrow(/exige a placa/i);
   });
 
   it("traz os dados da cotação que acabou de ser feita", () => {
@@ -146,18 +175,31 @@ describe("mensagem final", () => {
     expect(mensagem).toContain("Referência: setembro de 2026");
     expect(mensagem).toContain("Aplicativo / Táxi");
     expect(mensagem).toContain("OURO");
-    // Valor conferido contra a própria cotação, não fixado no teste.
+    // Valores conferidos contra a própria cotação, não fixados no teste.
     expect(mensagem).toContain(`${formatBRL(cotacao.mensalidade)}/mês`);
-    expect(mensagem).toContain("Padrão — 12% da FIPE");
     expect(mensagem).toContain(`${formatBRL(cotacao.valorParticipacao)} por evento coberto`);
     expect(mensagem).toContain(formatBRL(cotacao.adesao));
     expect(mensagem).toContain("MG-48213");
   });
 
+  it("omite a seção USO quando o cliente não declarou a finalidade", () => {
+    const semUso = whatsAppService.montarMensagem({
+      ...cotacao,
+      usoDeclarado: null,
+      usoParaPrecificacao: "STANDARD",
+    });
+
+    expect(semUso).not.toContain("\nUSO\n");
+    expect(semUso).not.toContain("Particular");
+    // O resto da mensagem continua íntegro.
+    expect(semUso).toContain("🚗 PLACA");
+    expect(semUso).toContain("\nPLANO\n");
+  });
+
   it("não contém dados de outro veículo nem valores fixos no código", () => {
     const fonte = readFileSync(resolve(__dirname, "../src/lib/whatsapp.ts"), "utf8");
 
-    expect(fonte).not.toMatch(/Gol|Volks|Corolla|28\.?436|164[,.]27|005324/);
+    expect(fonte).not.toMatch(/Gol|Volks|Corolla|28\.?436|164[,.]27|005324|BRA2E19/);
     expect(fonte).not.toMatch(/R\$\s?\d/);
   });
 
@@ -169,21 +211,27 @@ describe("mensagem final", () => {
       usoComercial: false,
     }) as PrecoDisponivel;
 
-    const comZero: CotacaoSnapshot = {
+    const zero = preco.participacoes.find((p) => p.id === "zero")!;
+    const texto = whatsAppService.montarMensagem({
       ...cotacao,
-      ...(() => {
-        const zero = preco.participacoes.find((p) => p.id === "zero")!;
-        return {
-          modalidadeParticipacao: zero.nome,
-          percentualParticipacao: zero.percentual,
-          valorParticipacao: zero.valor,
-          mensalidade: zero.mensalidade,
-        };
-      })(),
-    };
+      modalidadeParticipacao: zero.nome,
+      percentualParticipacao: zero.percentual,
+      valorParticipacao: zero.valor,
+      mensalidade: zero.mensalidade,
+    });
 
-    const texto = whatsAppService.montarMensagem(comZero);
     expect(texto).toContain("Participação zero — Sem participação no 1º evento coberto");
     expect(texto).toContain("R$ 0,00 no 1º evento coberto");
+  });
+
+  it("exibe a participação de moto como 12,5%, sem arredondar", () => {
+    const texto = whatsAppService.montarMensagem({
+      ...cotacao,
+      modalidadeParticipacao: "Reduzida",
+      percentualParticipacao: 0.125,
+    });
+
+    expect(texto).toContain("Reduzida — 12,5%");
+    expect(texto).not.toContain("13%");
   });
 });

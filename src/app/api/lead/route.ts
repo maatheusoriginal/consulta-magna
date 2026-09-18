@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { erro } from "@/lib/api";
-import { isEmailValido, isWhatsAppValido } from "@/lib/format";
-import { leadRepository } from "@/lib/leads";
+import { isEmailValido, isPlacaValida, isWhatsAppValido, normalizePlaca } from "@/lib/format";
+import { MENSAGEM_SEM_PERSISTENCIA, leadRepository } from "@/lib/leads";
 import type { CotacaoSnapshot } from "@/lib/leads/types";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,9 @@ const STATUS_VALIDOS = new Set(["OFFICIAL", "ESTIMATED", "UNAVAILABLE"]);
 
 /** Valida o snapshot recebido do navegador antes de persistir. */
 function validar(corpo: Partial<CotacaoSnapshot>): string | null {
+  if (!corpo.simulationId) return "Cotação sem identificador de simulação.";
   if (!corpo.codigo) return "Cotação sem código de simulação.";
+  if (!isPlacaValida(corpo.placa ?? "")) return "Cotação sem placa válida do veículo.";
   if ((corpo.nome ?? "").trim().length < 2) return "Informe o nome completo.";
   if (!isWhatsAppValido(corpo.telefone ?? "")) return "Informe um WhatsApp válido com DDD.";
   if (corpo.email && !isEmailValido(corpo.email)) return "E-mail inválido.";
@@ -44,8 +46,20 @@ export async function POST(request: Request) {
   if (problema) return erro(problema);
 
   const repositorio = leadRepository();
+
+  // Em produção o lead PRECISA ir para um destino durável. Sem isso a promessa
+  // de "salvar antes de abrir o WhatsApp" não se cumpre, então recusamos em vez
+  // de devolver um sucesso falso.
+  if (process.env.NODE_ENV === "production" && !repositorio.duravel) {
+    console.error(
+      "[lead] recusado: não há repositório durável configurado (LEAD_WEBHOOK_URL ausente).",
+    );
+    return erro(MENSAGEM_SEM_PERSISTENCIA, 503);
+  }
+
   const snapshot: CotacaoSnapshot = {
     ...(corpo as CotacaoSnapshot),
+    placa: normalizePlaca(corpo.placa ?? ""),
     telefone: (corpo.telefone ?? "").replace(/\D/g, ""),
     // O horário de gravação é do servidor, não do navegador.
     criadoEm: new Date().toISOString(),

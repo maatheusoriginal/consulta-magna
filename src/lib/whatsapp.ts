@@ -1,5 +1,5 @@
 import { WHATSAPP_NUMERO } from "./config";
-import { formatBRL, formatPercentual } from "./format";
+import { formatBRL, formatPercentual, formatPlaca } from "./format";
 import type { CotacaoSnapshot } from "./leads/types";
 
 /**
@@ -17,6 +17,10 @@ export class WhatsAppService {
   }
 
   montarMensagem(cotacao: CotacaoSnapshot): string {
+    if (!cotacao.placa) {
+      throw new Error("A mensagem do WhatsApp exige a placa do veículo.");
+    }
+
     const participacao =
       cotacao.percentualParticipacao === null
         ? {
@@ -24,28 +28,31 @@ export class WhatsAppService {
             valor: `${formatBRL(cotacao.valorParticipacao)} no 1º evento coberto`,
           }
         : {
-            percentual: `${formatPercentual(cotacao.percentualParticipacao)} da FIPE`,
+            percentual: formatPercentual(cotacao.percentualParticipacao),
             valor: `${formatBRL(cotacao.valorParticipacao)} por evento coberto`,
           };
 
-    return [
+    const linhas: Array<string | null> = [
       "Olá! Fiz uma simulação pelo site e gostaria de continuar meu atendimento.",
       "",
-      "NOME",
+      // A placa é a informação mais importante para o consultor: vem primeiro.
+      "🚗 PLACA",
+      formatPlaca(cotacao.placa),
+      "",
+      "👤 CLIENTE",
       cotacao.nome,
       "",
-      "VEÍCULO",
+      "🚘 VEÍCULO",
       `${cotacao.marca} ${cotacao.modelo}`,
       String(cotacao.ano),
       "",
-      "FIPE",
+      "📊 FIPE",
       `Código: ${cotacao.codigoFipe}`,
       `Valor: ${formatBRL(cotacao.valorFipe)}`,
       `Referência: ${cotacao.mesReferenciaFipe}`,
       "",
-      "USO",
-      cotacao.tipoUso,
-      "",
+      // Em moto a finalidade não é perguntada; não inventamos um uso declarado.
+      ...(cotacao.usoDeclarado ? ["USO", cotacao.usoDeclarado, ""] : []),
       "PLANO",
       cotacao.planoEscolhido.toUpperCase(),
       "",
@@ -59,10 +66,13 @@ export class WhatsAppService {
       "ADESÃO",
       formatBRL(cotacao.adesao),
       "",
-      `SIMULAÇÃO ${cotacao.codigo}`,
+      "Código da simulação:",
+      cotacao.codigo,
       "",
       "Gostaria de continuar o atendimento.",
-    ].join("\n");
+    ];
+
+    return linhas.filter((linha): linha is string => linha !== null).join("\n");
   }
 
   montarLink(cotacao: CotacaoSnapshot): string {
