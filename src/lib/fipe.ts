@@ -45,7 +45,10 @@ async function buscarJson<T>(url: string, revalidate: number): Promise<T> {
   });
 
   if (!resposta.ok) {
-    throw new FipeError(`Falha ao consultar a FIPE (HTTP ${resposta.status}).`, 502);
+    // 404 significa combinação inexistente na tabela — é diferente de a API
+    // estar fora do ar, e quem chama precisa distinguir os dois casos.
+    const status = resposta.status === 404 || resposta.status === 400 ? 404 : 502;
+    throw new FipeError(`Falha ao consultar a FIPE (HTTP ${resposta.status}).`, status);
   }
 
   const dados = (await resposta.json()) as T;

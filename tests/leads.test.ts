@@ -12,6 +12,7 @@ const SNAPSHOT: CotacaoSnapshot = {
   simulationId: "7c1f2d3e-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
   codigo: "MG-12345",
   consentimentoEm: "2026-09-18T12:00:00.000Z",
+  consentimentoVersao: "lead-contact-v1",
   criadoEm: "2026-09-18T12:00:00.000Z",
   nome: "Ana Souza",
   telefone: "34991960908",

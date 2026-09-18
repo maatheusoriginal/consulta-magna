@@ -7,6 +7,8 @@ interface CotacaoSnapshotBase {
   simulationId: string;
   /** Momento em que o cliente consentiu com o uso dos dados (ISO 8601). */
   consentimentoEm: string;
+  /** Versão do texto de consentimento aceito, ex.: `lead-contact-v1`. */
+  consentimentoVersao: string;
   /** Código legível para cliente e consultor, ex.: MG-48213 */
   codigo: string;
   criadoEm: string;

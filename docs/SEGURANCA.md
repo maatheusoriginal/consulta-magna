@@ -26,8 +26,10 @@ apenas dados de entrada:
 `src/lib/cotacao-servidor.ts` então, nessa ordem:
 
 1. valida contato, placa e **consentimento**;
-2. valida a identidade do veículo (tipo, código FIPE, valor > 0, modelo, ano);
-3. determina a categoria a partir do tipo;
+2. **revalida o veículo na tabela FIPE** a partir de `tipo + marcaCodigo +
+   modeloCodigo + anoCodigo`, e passa a usar exclusivamente a identidade
+   devolvida pela API (ver abaixo);
+3. determina a categoria a partir do tipo confirmado;
 4. obtém os planos da categoria com `getAvailablePlanIds()`;
 5. rejeita plano não oferecido para a categoria (`422`);
 6. deriva o uso comercial do perfil — e o ignora onde a finalidade não é
@@ -42,6 +44,36 @@ apenas dados de entrada:
 Qualquer campo de valor que venha no corpo é simplesmente descartado. Enviar
 `mensalidade: 1`, `statusPrecificacao: "OFFICIAL"` ou `planoRecomendado:
 "premium"` não muda nada.
+
+## A FIPE também é server-authoritative
+
+O navegador manda marca, modelo, ano, combustível, código e valor FIPE apenas
+para a interface. **Nada disso é aceito como verdade.** O servidor reconsulta a
+tabela com `consultarPreco(tipo, marcaCodigo, modeloCodigo, anoCodigo)` de
+`src/lib/fipe.ts` — a mesma integração usada pelo resto do app, sem duplicação —
+e a resposta vira a identidade canônica do veículo para precificação, snapshot,
+lead, webhook e WhatsApp.
+
+| Situação | Resposta |
+| --- | --- |
+| Códigos ausentes (`marcaCodigo`, `modeloCodigo` ou `anoCodigo`) | `422` — "Não foi possível confirmar os dados FIPE deste veículo. Volte e selecione o veículo novamente." |
+| Combinação inexistente na tabela (inclui código de carro enviado como moto) | `422`, mesma mensagem |
+| API da FIPE indisponível | `503` — "Não foi possível confirmar o valor FIPE agora. Tente novamente em alguns instantes." |
+
+Regras importantes:
+
+- **O tipo faz parte da consulta.** Um código de carro enviado como `motos`
+  simplesmente não existe na tabela de motos e é rejeitado. Nunca há fallback
+  para outro tipo.
+- **Indisponibilidade nunca vira fallback.** Se a FIPE não responde, o valor do
+  navegador não é usado, nenhum preço é inventado, o lead não é persistido e o
+  WhatsApp não é liberado.
+- **Caminhão também é revalidado.** A identidade vem da FIPE, mas o resultado
+  continua `UNAVAILABLE` com todos os valores em `null` — a revalidação não cria
+  preço para categoria sem regra.
+- `consultarPreco` já tem cache (6h em memória, 24h no cache do Next), então o
+  veículo recém-selecionado responde do cache e a revalidação não multiplica
+  chamadas externas.
 
 ### Snapshot canônico
 
@@ -102,7 +134,10 @@ A captura do lead exige um checkbox **desmarcado por padrão**:
 > Concordo com o uso dos meus dados para dar continuidade a este atendimento.
 
 Sem ele o botão do WhatsApp não habilita, e o servidor recusa a solicitação com
-`400`. O momento do aceite é gravado no snapshot em `consentimentoEm`.
+`400`. O snapshot grava o momento do aceite em `consentimentoEm` e a versão do
+texto aceito em `consentimentoVersao` (hoje `lead-contact-v1`), para que seja
+possível saber no futuro qual texto cada cliente aceitou. Ao alterar o texto,
+incremente `VERSAO_CONSENTIMENTO` em `src/lib/config.ts`.
 
 `NEXT_PUBLIC_PRIVACY_POLICY_URL` adiciona o link para a Política de Privacidade
 ao lado do texto. Sem a variável não há link — o código não inventa uma política.

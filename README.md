@@ -204,10 +204,13 @@ dados do veículo.
 
 ### Endurecimento de produção
 
-- **O servidor é a fonte da cotação.** `POST /api/lead` recalcula mensalidade,
-  participação, adesão, plano recomendado e `statusPrecificacao`; o corpo da
-  requisição carrega apenas entradas. Nem o status nem os valores podem ser
-  escolhidos pelo cliente.
+- **O servidor é a fonte da cotação.** `POST /api/lead` revalida o veículo na
+  FIPE pelos códigos e recalcula mensalidade, participação, adesão, plano
+  recomendado e `statusPrecificacao`. Nem a identidade do veículo, nem o valor
+  FIPE, nem o status podem ser escolhidos pelo cliente.
+- **Sem confirmação não há cotação.** Códigos FIPE ausentes ou combinação
+  inexistente → `422`; API da FIPE fora do ar → `503`, sem usar o valor do
+  navegador como fallback e sem persistir o lead.
 - **Rate limit** por IP em `/api/lead`, `/api/placa` e `/api/fipe/*`, com
   provider distribuído (Upstash/Vercel KV) e fallback em memória que **avisa**
   que não é global em serverless.

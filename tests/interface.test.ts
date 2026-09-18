@@ -250,3 +250,43 @@ describe("rate limit nos endpoints públicos", () => {
     }
   });
 });
+
+describe("revalidação da FIPE no servidor", () => {
+  const servidor = ler("src/lib/cotacao-servidor.ts");
+  const rota = ler("src/app/api/lead/route.ts");
+
+  it("usa consultarPreco de src/lib/fipe, sem duplicar a integração", () => {
+    expect(servidor).toContain('from "./fipe"');
+    expect(servidor).toContain("consultarPreco(");
+    // Nenhuma chamada HTTP própria à FIPE.
+    expect(servidor).not.toContain("parallelum");
+    expect(servidor).not.toMatch(/fetch\(/);
+  });
+
+  it("a reconstrução é assíncrona e a rota espera por ela", () => {
+    expect(servidor).toContain("export async function reconstruirCotacao");
+    expect(rota).toContain("await reconstruirCotacao(bruto)");
+  });
+
+  it("a identidade usada é a devolvida pela FIPE", () => {
+    // O snapshot recebe o veículo revalidado, não o do request.
+    expect(servidor).toContain("veiculo: { ...revalidado, placa }");
+    expect(servidor).toContain("valorFipe: revalidado.valor");
+    expect(servidor).toContain("categoriaDoTipo(revalidado.tipo)");
+  });
+
+  it("não há fallback para o valor enviado pelo navegador", () => {
+    const codigo = servidor.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    // Depois da revalidação, `veiculo` (o do request) não alimenta preço nem snapshot.
+    expect(codigo).not.toMatch(/valorFipe:\s*veiculo\.valor/);
+    expect(codigo).not.toMatch(/valor:\s*veiculo\.valor/);
+  });
+});
+
+describe("versão do consentimento", () => {
+  it("fica registrada no snapshot", () => {
+    expect(ler("src/lib/config.ts")).toContain('VERSAO_CONSENTIMENTO = "lead-contact-v1"');
+    expect(ler("src/lib/cotacao-servidor.ts")).toContain("consentimentoVersao: VERSAO_CONSENTIMENTO");
+    expect(ler("src/lib/leads/types.ts")).toContain("consentimentoVersao: string;");
+  });
+});

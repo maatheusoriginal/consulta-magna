@@ -28,6 +28,14 @@ export const URL_POLITICA_PRIVACIDADE = (
   process.env.NEXT_PUBLIC_PRIVACY_POLICY_URL ?? ""
 ).trim();
 
+/**
+ * Versão do texto de consentimento exibido na captura do lead.
+ *
+ * Fica gravada no snapshot para que seja possível saber, no futuro, qual texto
+ * cada cliente aceitou. Ao mudar o texto, incremente a versão.
+ */
+export const VERSAO_CONSENTIMENTO = "lead-contact-v1";
+
 /** Texto exibido enquanto a mensalidade vier de regra inferida. */
 export const AVISO_SIMULACAO_ESTIMADA =
   "Simulação estimada. Valores sujeitos à confirmação.";

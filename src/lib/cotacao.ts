@@ -50,6 +50,8 @@ export function montarSnapshot(entrada: {
   lead: Lead;
   /** Momento do consentimento, registrado pelo servidor. */
   consentimentoEm: string;
+  /** Versão do texto de consentimento aceito. */
+  consentimentoVersao: string;
 }): CotacaoSnapshot {
   const placa = normalizePlaca(entrada.placa);
   if (!placa) throw new Error("A cotação não pode ser fechada sem a placa do veículo.");
@@ -71,6 +73,7 @@ export function montarSnapshot(entrada: {
     codigo: entrada.codigo,
     criadoEm: new Date().toISOString(),
     consentimentoEm: entrada.consentimentoEm,
+    consentimentoVersao: entrada.consentimentoVersao,
 
     nome: entrada.lead.nome,
     telefone: entrada.lead.whatsapp.replace(/\D/g, ""),

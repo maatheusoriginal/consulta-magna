@@ -1,12 +1,15 @@
 import "server-only";
 
+import { VERSAO_CONSENTIMENTO } from "./config";
 import { gerarCodigoSimulacao, gerarSimulationId, montarSnapshot } from "./cotacao";
+import { FipeError, consultarPreco } from "./fipe";
 import { isEmailValido, isPlacaValida, isWhatsAppValido, normalizePlaca } from "./format";
 import type { CotacaoSnapshot } from "./leads/types";
 import { pricingProvider } from "./pricing";
 import { recomendarPlano } from "./recomendacao";
 import {
   categoriaDoTipo,
+  type FipeVeiculo,
   finalidadeNaoAlteraCotacao,
   type ParticipacaoId,
   type PerfilRespostas,
@@ -25,6 +28,13 @@ import {
  * Isso existe porque a aplicação é pública: qualquer pessoa pode montar um POST
  * à mão. O snapshot persistido e devolvido é sempre o do servidor.
  */
+
+export const MENSAGEM_FIPE_NAO_CONFIRMADA =
+  "Não foi possível confirmar os dados FIPE deste veículo. " +
+  "Volte e selecione o veículo novamente.";
+
+export const MENSAGEM_FIPE_INDISPONIVEL =
+  "Não foi possível confirmar o valor FIPE agora. Tente novamente em alguns instantes.";
 
 const TIPOS: TipoVeiculo[] = ["carros", "motos", "caminhoes"];
 const PARTICIPACOES: ParticipacaoId[] = ["padrao", "reduzida", "minima", "zero"];
@@ -61,7 +71,7 @@ export interface SolicitacaoLead {
 
 export interface FalhaReconstrucao {
   ok: false;
-  status: 400 | 422;
+  status: 400 | 422 | 503;
   erro: string;
 }
 
@@ -72,7 +82,7 @@ export interface CotacaoReconstruida {
 
 export type ResultadoReconstrucao = CotacaoReconstruida | FalhaReconstrucao;
 
-function falha(erro: string, status: 400 | 422 = 400): FalhaReconstrucao {
+function falha(erro: string, status: 400 | 422 | 503 = 400): FalhaReconstrucao {
   return { ok: false, status, erro };
 }
 
@@ -145,8 +155,48 @@ function validarPerfil(bruto: unknown): PerfilRespostas | null | string {
   return p as unknown as PerfilRespostas;
 }
 
+/**
+ * Revalida o veículo contra a tabela FIPE e devolve a identidade canônica.
+ *
+ * Os códigos `tipo + marcaCodigo + modeloCodigo + anoCodigo` são a única
+ * entrada aceita: marca, modelo, ano, combustível, código e VALOR vêm da
+ * resposta da FIPE, nunca do navegador. Um código de carro enviado como moto
+ * simplesmente não existe na tabela de motos e é rejeitado — nunca há fallback
+ * para outro tipo.
+ *
+ * `consultarPreco` já tem cache (6h em memória, 24h no cache do Next), então na
+ * prática o veículo recém-selecionado responde do cache.
+ */
+async function revalidarNaFipe(
+  entrada: VeiculoSolicitado,
+): Promise<FipeVeiculo | FalhaReconstrucao> {
+  if (!entrada.marcaCodigo || !entrada.modeloCodigo || !entrada.anoCodigo) {
+    return falha(MENSAGEM_FIPE_NAO_CONFIRMADA, 422);
+  }
+
+  try {
+    const veiculo = await consultarPreco(
+      entrada.tipo,
+      entrada.marcaCodigo,
+      entrada.modeloCodigo,
+      entrada.anoCodigo,
+    );
+
+    if (!(veiculo.valor > 0)) return falha(MENSAGEM_FIPE_INDISPONIVEL, 503);
+    return veiculo;
+  } catch (e) {
+    // Combinação inexistente é adulteração; indisponibilidade é infraestrutura.
+    if (e instanceof FipeError && e.status === 404) {
+      return falha(MENSAGEM_FIPE_NAO_CONFIRMADA, 422);
+    }
+    // Sem confirmação não há cotação: o valor do navegador nunca vira fallback.
+    console.error("[cotacao] falha ao revalidar o veículo na FIPE:", e);
+    return falha(MENSAGEM_FIPE_INDISPONIVEL, 503);
+  }
+}
+
 /** Valida a solicitação e reconstrói a cotação inteiramente no servidor. */
-export function reconstruirCotacao(bruto: unknown): ResultadoReconstrucao {
+export async function reconstruirCotacao(bruto: unknown): Promise<ResultadoReconstrucao> {
   if (!bruto || typeof bruto !== "object") return falha("Corpo da requisição inválido.");
   const corpo = bruto as Record<string, unknown>;
 
@@ -177,31 +227,22 @@ export function reconstruirCotacao(bruto: unknown): ResultadoReconstrucao {
   const planoEscolhido = corpo.planoEscolhido == null ? null : texto(corpo.planoEscolhido);
   const participacaoId = corpo.participacaoId == null ? null : texto(corpo.participacaoId);
 
-  const consentimentoEm = new Date().toISOString();
+  // A identidade e o VALOR do veículo vêm da FIPE, não do navegador.
+  const revalidado = await revalidarNaFipe(veiculo);
+  if ("ok" in revalidado) return revalidado;
+
   const identidade = {
     simulationId: gerarSimulationId(),
     codigo: gerarCodigoSimulacao(),
     placa,
-    consentimentoEm,
+    consentimentoEm: new Date().toISOString(),
+    consentimentoVersao: VERSAO_CONSENTIMENTO,
     lead: { nome, whatsapp, email: email || undefined },
-    veiculo: {
-      tipo: veiculo.tipo,
-      marcaCodigo: veiculo.marcaCodigo ?? "",
-      marca: veiculo.marca,
-      modeloCodigo: veiculo.modeloCodigo ?? "",
-      modelo: veiculo.modelo,
-      anoCodigo: veiculo.anoCodigo ?? "",
-      anoModelo: veiculo.anoModelo,
-      combustivel: veiculo.combustivel,
-      codigoFipe: veiculo.codigoFipe,
-      mesReferencia: veiculo.mesReferencia,
-      valor: veiculo.valor,
-      placa,
-    },
+    veiculo: { ...revalidado, placa },
   };
 
   // ------------------------------------------------- oferta real da categoria
-  const categoria = categoriaDoTipo(veiculo.tipo);
+  const categoria = categoriaDoTipo(revalidado.tipo);
   const planosDaCategoria = pricingProvider.getAvailablePlanIds(categoria);
 
   if (planosDaCategoria.length === 0) {
@@ -233,11 +274,12 @@ export function reconstruirCotacao(bruto: unknown): ResultadoReconstrucao {
   // A finalidade só vale onde ela é perguntada. Em moto o cliente não declara
   // nada, então uso comercial não pode ser forçado pelo request.
   const usoComercial =
-    !finalidadeNaoAlteraCotacao(veiculo.tipo) && perfil.finalidade === "aplicativo";
+    !finalidadeNaoAlteraCotacao(revalidado.tipo) && perfil.finalidade === "aplicativo";
 
   const preco = pricingProvider.precificar({
     categoria,
-    valorFipe: veiculo.valor,
+    // O valor é o da FIPE revalidada, jamais o enviado pelo cliente.
+    valorFipe: revalidado.valor,
     planoId: planoEscolhido as PlanoId,
     usoComercial,
   });

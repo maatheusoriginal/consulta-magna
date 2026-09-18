@@ -27,6 +27,7 @@ function cotacaoDeTeste(): CotacaoPrecificada {
     simulationId: "7c1f2d3e-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
     codigo: "MG-48213",
     consentimentoEm: "2026-09-18T12:00:00.000Z",
+    consentimentoVersao: "lead-contact-v1",
     placa: "BRA2E19",
     veiculo: {
       tipo: "carros",

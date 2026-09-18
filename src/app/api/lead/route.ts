@@ -10,10 +10,11 @@ export const dynamic = "force-dynamic";
 /**
  * Registra o lead a partir dos DADOS DE ENTRADA enviados pelo navegador.
  *
- * Nenhum valor calculado no cliente é aceito: mensalidade, participação,
- * adesão, plano recomendado e `statusPrecificacao` são recalculados aqui pelo
- * `PricingProvider` (ver `src/lib/cotacao-servidor.ts`). O snapshot persistido
- * e devolvido é sempre o do servidor.
+ * Nada vindo do cliente é aceito como verdade: a identidade e o valor FIPE do
+ * veículo são reconsultados na tabela a partir dos códigos, e mensalidade,
+ * participação, adesão, plano recomendado e `statusPrecificacao` são
+ * recalculados pelo `PricingProvider` (ver `src/lib/cotacao-servidor.ts`).
+ * O snapshot persistido e devolvido é sempre o do servidor.
  */
 export async function POST(request: Request) {
   const limite = await aplicarRateLimit(request, REGRAS.lead);
@@ -26,7 +27,8 @@ export async function POST(request: Request) {
     return erro("Corpo da requisição inválido.");
   }
 
-  const resultado = reconstruirCotacao(bruto);
+  // A reconstrução revalida o veículo na FIPE antes de precificar.
+  const resultado = await reconstruirCotacao(bruto);
   if (!resultado.ok) return erro(resultado.erro, resultado.status);
 
   const repositorio = leadRepository();
