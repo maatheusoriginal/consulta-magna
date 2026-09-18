@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { tratarErro, erro } from "@/lib/api";
+import { REGRAS, aplicarRateLimit } from "@/lib/rate-limit";
 import { isTipoVeiculo, listarAnos } from "@/lib/fipe";
 
 export const revalidate = 86400;
 
 export async function GET(request: Request) {
+  const limite = await aplicarRateLimit(request, REGRAS.fipe);
+  if (limite) return limite;
+
   const params = new URL(request.url).searchParams;
   const tipo = params.get("tipo") ?? "carros";
   const marca = params.get("marca");

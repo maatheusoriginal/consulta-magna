@@ -67,7 +67,9 @@ describe("estado sem precificação", () => {
   it("a tela de resumo aceita cotação sem precificação", () => {
     const resumo = ler("src/components/wizard/StepResumo.tsx");
     expect(resumo).toContain("semPrecificacao");
-    expect(resumo).toContain("precificacao,");
+    // Sem precificação, plano e modalidade vão nulos para o servidor.
+    expect(resumo).toContain("planoEscolhido: precificacao ? precificacao.planoEscolhido : null");
+    expect(resumo).toContain("participacaoId: precificacao ? precificacao.participacao.id : null");
   });
 });
 
@@ -165,6 +167,86 @@ describe("navegação para veículo sem precificação", () => {
   it("nenhum atributo de depuração sobrou na interface", () => {
     for (const caminho of TELAS) {
       expect(ler(caminho), caminho).not.toMatch(/data-debug/);
+    }
+  });
+});
+
+describe("o frontend não é a fonte da verdade da cotação", () => {
+  const resumo = ler("src/components/wizard/StepResumo.tsx");
+
+  it("envia dados de entrada, não valores calculados", () => {
+    // O corpo do POST carrega veículo, perfil e escolhas — nada de preço.
+    expect(resumo).toContain("const solicitacao = {");
+    expect(resumo).toContain("planoEscolhido:");
+    expect(resumo).toContain("participacaoId:");
+    expect(resumo).not.toMatch(/solicitacao[\s\S]{0,600}mensalidade:/);
+    expect(resumo).not.toMatch(/solicitacao[\s\S]{0,600}statusPrecificacao:/);
+    expect(resumo).not.toMatch(/solicitacao[\s\S]{0,600}adesao:/);
+  });
+
+  it("não monta mais o snapshot no navegador", () => {
+    expect(resumo).not.toContain("montarSnapshot");
+    expect(resumo).not.toContain("gerarSimulationId");
+    expect(resumo).not.toContain("gerarCodigoSimulacao");
+  });
+
+  it("usa o snapshot devolvido pela API na conclusão", () => {
+    expect(resumo).toContain("concluir(lead, resposta.snapshot)");
+  });
+
+  it("montarSnapshot é usado apenas no servidor", () => {
+    const servidor = ler("src/lib/cotacao-servidor.ts");
+    expect(servidor).toContain('import "server-only";');
+    expect(servidor).toContain("montarSnapshot");
+  });
+});
+
+describe("consentimento", () => {
+  const resumo = ler("src/components/wizard/StepResumo.tsx");
+
+  it("o checkbox começa desmarcado", () => {
+    expect(resumo).toContain("useState(false)");
+    expect(resumo).toContain("checked={consentimento}");
+    // Nada de defaultChecked nem de estado inicial verdadeiro.
+    expect(resumo).not.toContain("defaultChecked");
+    expect(resumo).not.toMatch(/const \[consentimento, setConsentimento\] = useState\(true\)/);
+  });
+
+  it("bloqueia a conclusão sem consentimento", () => {
+    expect(resumo).toMatch(/podeConcluir =[\s\S]{0,240}consentimento &&/);
+    expect(resumo).toContain("É necessário concordar com o uso dos dados para continuar.");
+  });
+
+  it("o texto é curto e não inventa política jurídica", () => {
+    expect(resumo).toContain(
+      "Concordo com o uso dos meus dados para dar continuidade a este atendimento.",
+    );
+    expect(resumo).not.toMatch(/LGPD|Lei n|artigo \d/i);
+  });
+
+  it("o link da política é configurável e opcional", () => {
+    expect(ler("src/lib/config.ts")).toContain("NEXT_PUBLIC_PRIVACY_POLICY_URL");
+    expect(resumo).toContain("URL_POLITICA_PRIVACIDADE ? (");
+  });
+});
+
+describe("rate limit nos endpoints públicos", () => {
+  const rotas = [
+    "src/app/api/lead/route.ts",
+    "src/app/api/placa/route.ts",
+    "src/app/api/fipe/marcas/route.ts",
+    "src/app/api/fipe/modelos/route.ts",
+    "src/app/api/fipe/anos/route.ts",
+    "src/app/api/fipe/preco/route.ts",
+  ];
+
+  it("todas as rotas públicas aplicam o limite antes de qualquer trabalho", () => {
+    for (const caminho of rotas) {
+      const fonte = ler(caminho);
+      expect(fonte, caminho).toContain("aplicarRateLimit");
+      const posLimite = fonte.indexOf("aplicarRateLimit(request");
+      const posJson = fonte.indexOf("request.json()");
+      if (posJson > -1) expect(posLimite, caminho).toBeLessThan(posJson);
     }
   });
 });

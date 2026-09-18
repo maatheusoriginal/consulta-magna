@@ -67,6 +67,8 @@ Todas as variáveis estão documentadas em `.env.example`.
 | --- | --- | --- |
 | `NEXT_PUBLIC_WHATSAPP_NUMERO` | recomendada | `5534991960908` |
 | `LEAD_WEBHOOK_URL` | **sim, em produção** | — |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | recomendada em produção | — |
+| `NEXT_PUBLIC_PRIVACY_POLICY_URL` | não | — |
 | `FIPE_API_URL` | não | Parallelum |
 | `PLACA_API_URL` | não | — |
 | `NEXT_PUBLIC_TAXA_ADESAO_MINIMA` | não | `300` |
@@ -182,19 +184,35 @@ de placa própria. `abc-1d23` e ` abc 1d23 ` viram `ABC1D23`; os padrões antigo
 
 ## Fluxo de captura do lead
 
-1. valida nome, telefone e **placa** (e-mail, se informado);
-2. monta o snapshot definitivo da cotação, com `simulationId` e `codigo`;
-3. persiste o lead — em caso de falha, o cliente vê o erro e o fluxo **não** avança;
-4. só então a tela final libera o link do WhatsApp.
+1. valida nome, telefone, **placa** e **consentimento** (e-mail, se informado);
+2. envia ao servidor apenas os **dados de entrada** — veículo, respostas do
+   perfil e escolhas. Nenhum valor calculado no navegador é enviado como verdade;
+3. o servidor recalcula tudo com o `PricingProvider` e monta o snapshot canônico;
+4. persiste o lead — em caso de falha, o cliente vê o erro e o fluxo **não** avança;
+5. a tela final e o WhatsApp usam o **snapshot devolvido pelo servidor**.
 
-O botão "Continuar pelo WhatsApp" só habilita com nome, telefone, placa, veículo,
-versão FIPE e plano válidos. O botão final é um único
+Detalhes e garantias em [`docs/SEGURANCA.md`](docs/SEGURANCA.md).
+
+O botão "Continuar pelo WhatsApp" só habilita com nome, telefone, placa,
+consentimento, veículo, versão FIPE e plano válidos. O botão final é um único
 `<a href target="_blank" rel="noopener noreferrer">`, sem `window.open`, e a
 mensagem é montada a partir do snapshot — nenhum veículo, valor FIPE, plano ou
 preço fixo no código. **A placa aparece logo no início da mensagem**, antes dos
 dados do veículo.
 
 ## Estrutura
+
+### Endurecimento de produção
+
+- **O servidor é a fonte da cotação.** `POST /api/lead` recalcula mensalidade,
+  participação, adesão, plano recomendado e `statusPrecificacao`; o corpo da
+  requisição carrega apenas entradas. Nem o status nem os valores podem ser
+  escolhidos pelo cliente.
+- **Rate limit** por IP em `/api/lead`, `/api/placa` e `/api/fipe/*`, com
+  provider distribuído (Upstash/Vercel KV) e fallback em memória que **avisa**
+  que não é global em serverless.
+- **Consentimento** explícito, desmarcado por padrão, com link opcional para a
+  Política de Privacidade.
 
 ```
 src/
@@ -211,12 +229,15 @@ src/
     planos.ts             catálogo de coberturas (sem preço)
     pricing/              PricingProvider, config e regra inferida
     leads/                LeadRepository e implementações
+    rate-limit/           RateLimitProvider (memória e Upstash)
+    cotacao-servidor.ts   reconstrução e revalidação da cotação no servidor
     recomendacao.ts       motor de recomendação (ignora a finalidade)
     cotacao.ts            snapshot definitivo da cotação
     whatsapp.ts           WhatsAppService
     wizard.tsx            estado do wizard (contexto + sessionStorage)
 tests/                    suíte Vitest
 docs/PRECIFICACAO.md      regra de preços, status e migração para OFFICIAL
+docs/SEGURANCA.md         endurecimento de produção (servidor, rate limit, consentimento)
 ```
 
 ## Deploy

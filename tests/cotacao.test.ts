@@ -56,6 +56,7 @@ function snapshot(overrides: { veiculo?: FipeVeiculo; perfil?: PerfilRespostas; 
   return montarSnapshot({
     simulationId: gerarSimulationId(),
     codigo: gerarCodigoSimulacao(),
+    consentimentoEm: new Date().toISOString(),
     placa: overrides.placa ?? "abc-1d23",
     veiculo,
     perfil: overrides.perfil ?? PERFIL,
@@ -111,6 +112,7 @@ describe("placa no snapshot", () => {
     const s = montarSnapshot({
       simulationId: gerarSimulationId(),
       codigo: gerarCodigoSimulacao(),
+      consentimentoEm: new Date().toISOString(),
       placa: "XYZ9K88",
       veiculo: { ...CARRO, placa: "BRA2E19" },
       perfil: PERFIL,
@@ -176,6 +178,7 @@ describe("cotação sem precificação (UNAVAILABLE)", () => {
     return montarSnapshot({
       simulationId: gerarSimulationId(),
       codigo: gerarCodigoSimulacao(),
+      consentimentoEm: new Date().toISOString(),
       placa: "abc-1d23",
       veiculo: CAMINHAO,
       perfil: null,
@@ -224,6 +227,7 @@ describe("cotação sem precificação (UNAVAILABLE)", () => {
       montarSnapshot({
         simulationId: gerarSimulationId(),
         codigo: gerarCodigoSimulacao(),
+        consentimentoEm: new Date().toISOString(),
         placa: "",
         veiculo: CAMINHAO,
         perfil: null,

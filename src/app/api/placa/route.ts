@@ -4,10 +4,14 @@ import { tratarErro, erro } from "@/lib/api";
 import { isTipoVeiculo } from "@/lib/fipe";
 import { isPlacaValida } from "@/lib/format";
 import { consultarPlaca } from "@/lib/placa";
+import { REGRAS, aplicarRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const limite = await aplicarRateLimit(request, REGRAS.placa);
+  if (limite) return limite;
+
   const params = new URL(request.url).searchParams;
   const placa = params.get("placa") ?? "";
   const tipoBruto = params.get("tipo");

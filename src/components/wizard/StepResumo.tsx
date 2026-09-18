@@ -16,13 +16,8 @@ import { useState } from "react";
 import { Aviso } from "@/components/Aviso";
 import { ListaCoberturas } from "@/components/ListaCoberturas";
 import { postJson } from "@/lib/client-api";
-import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
-import {
-  gerarCodigoSimulacao,
-  gerarSimulationId,
-  montarSnapshot,
-  type PrecificacaoDaCotacao,
-} from "@/lib/cotacao";
+import { AVISO_SIMULACAO_ESTIMADA, URL_POLITICA_PRIVACIDADE } from "@/lib/config";
+import type { PrecificacaoDaCotacao } from "@/lib/cotacao";
 import {
   formatBRL,
   formatPercentual,
@@ -58,6 +53,8 @@ export function StepResumo() {
   const [erros, setErros] = useState<Record<string, string>>({});
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  // Consentimento começa SEMPRE desmarcado — nada de opt-in silencioso.
+  const [consentimento, setConsentimento] = useState(false);
 
   // Veículo sem regra de precificação também captura lead: só não tem valores.
   const precificacao: PrecificacaoDaCotacao | null =
@@ -79,13 +76,16 @@ export function StepResumo() {
     evento.preventDefault();
     setErroEnvio(null);
 
-    // 1, 2 e 3 — validação de nome, telefone e placa antes de qualquer outra coisa.
+    // 1 — validação local (o servidor revalida tudo de novo).
     const novosErros: Record<string, string> = {};
     if (nome.trim().length < 2) novosErros.nome = "Informe seu nome completo.";
     if (!isWhatsAppValido(whatsapp)) novosErros.whatsapp = "Informe um WhatsApp válido com DDD.";
     if (email && !isEmailValido(email)) novosErros.email = "E-mail inválido.";
     if (!isPlacaValida(placaFinal)) {
       novosErros.placa = "Informe a placa do veículo (ABC1234 ou ABC1D23).";
+    }
+    if (!consentimento) {
+      novosErros.consentimento = "É necessário concordar com o uso dos dados para continuar.";
     }
 
     setErros(novosErros);
@@ -96,22 +96,38 @@ export function StepResumo() {
 
     const lead = { nome: nome.trim(), whatsapp, email: email.trim() || undefined };
 
-    // 4 — snapshot definitivo da cotação que o usuário acabou de fazer.
-    // Sem regra de precificação nenhum valor é inventado: vai tudo `null`.
-    const snapshot: CotacaoSnapshot = montarSnapshot({
-      simulationId: gerarSimulationId(),
-      codigo: gerarCodigoSimulacao(),
+    // 2 — enviamos apenas DADOS DE ENTRADA. Mensalidade, participação, adesão,
+    // plano recomendado e status são recalculados no servidor: nada que o
+    // navegador calcule é aceito como verdade.
+    const solicitacao = {
+      nome: lead.nome,
+      whatsapp: lead.whatsapp,
+      email: lead.email,
       placa: placaFinal,
-      veiculo: veiculo!,
+      consentimento: true,
+      veiculo: {
+        tipo: veiculo!.tipo,
+        marca: veiculo!.marca,
+        modelo: veiculo!.modelo,
+        anoModelo: veiculo!.anoModelo,
+        combustivel: veiculo!.combustivel,
+        codigoFipe: veiculo!.codigoFipe,
+        valor: veiculo!.valor,
+        mesReferencia: veiculo!.mesReferencia,
+        marcaCodigo: veiculo!.marcaCodigo,
+        modeloCodigo: veiculo!.modeloCodigo,
+        anoCodigo: veiculo!.anoCodigo,
+      },
       perfil: precificacao ? perfilCompleto : null,
-      precificacao,
-      lead,
-    });
+      planoEscolhido: precificacao ? precificacao.planoEscolhido : null,
+      participacaoId: precificacao ? precificacao.participacao.id : null,
+    };
 
     setEnviando(true);
+    let resposta: { snapshot: CotacaoSnapshot };
     try {
-      // 5 — persistir o lead. Só avançamos depois que ele foi aceito.
-      await postJson("/api/lead", snapshot);
+      // 3 — persistir o lead. Só avançamos depois que ele foi aceito.
+      resposta = await postJson<{ snapshot: CotacaoSnapshot }>("/api/lead", solicitacao);
     } catch (e) {
       setErroEnvio(
         e instanceof Error
@@ -123,8 +139,8 @@ export function StepResumo() {
       setEnviando(false);
     }
 
-    // 6 — só agora o WhatsApp fica disponível, montado a partir do snapshot.
-    concluir(lead, snapshot);
+    // 4 — a tela final e o WhatsApp usam o snapshot DO SERVIDOR, não o local.
+    concluir(lead, resposta.snapshot);
     irPara("whatsapp");
   }
 
@@ -132,6 +148,7 @@ export function StepResumo() {
     nome.trim().length >= 2 &&
     isWhatsAppValido(whatsapp) &&
     isPlacaValida(placaFinal) &&
+    consentimento &&
     (!email || isEmailValido(email));
 
   const carencias = (planoSelecionado?.coberturas ?? [])
@@ -359,10 +376,41 @@ export function StepResumo() {
             </p>
           ) : null}
 
-          <p className="flex items-start gap-2 text-xs leading-relaxed text-text-secondary">
-            <ShieldCheck size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-primary" aria-hidden />
-            Seus dados serão utilizados para dar continuidade ao atendimento.
-          </p>
+          <div>
+            <label
+              htmlFor="consentimento"
+              className="flex cursor-pointer items-start gap-3 text-xs leading-relaxed text-text-secondary"
+            >
+              <input
+                id="consentimento"
+                type="checkbox"
+                checked={consentimento}
+                onChange={(e) => setConsentimento(e.target.checked)}
+                aria-invalid={Boolean(erros.consentimento)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border-input accent-primary"
+              />
+              <span>
+                Concordo com o uso dos meus dados para dar continuidade a este atendimento.
+                {URL_POLITICA_PRIVACIDADE ? (
+                  <>
+                    {" "}
+                    <a
+                      href={URL_POLITICA_PRIVACIDADE}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-primary underline underline-offset-2"
+                    >
+                      Política de Privacidade
+                    </a>
+                    .
+                  </>
+                ) : null}
+              </span>
+            </label>
+            {erros.consentimento ? (
+              <p className="mt-1.5 text-sm text-primary">{erros.consentimento}</p>
+            ) : null}
+          </div>
 
           <button type="submit" disabled={enviando || !podeConcluir} className="btn-whatsapp">
             {enviando ? (

@@ -19,6 +19,15 @@ export const MARCA = {
     "Proteção veicular com transparência nas coberturas, participações e carências.",
 };
 
+/**
+ * Link da Política de Privacidade, exibido junto ao consentimento.
+ *
+ * Vazio por padrão: sem URL definitiva o site não inventa uma política.
+ */
+export const URL_POLITICA_PRIVACIDADE = (
+  process.env.NEXT_PUBLIC_PRIVACY_POLICY_URL ?? ""
+).trim();
+
 /** Texto exibido enquanto a mensalidade vier de regra inferida. */
 export const AVISO_SIMULACAO_ESTIMADA =
   "Simulação estimada. Valores sujeitos à confirmação.";

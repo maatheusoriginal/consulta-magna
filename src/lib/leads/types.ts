@@ -5,6 +5,8 @@ import type { PricingStatus } from "../pricing/types";
 interface CotacaoSnapshotBase {
   /** Identificador técnico único da simulação (UUID). */
   simulationId: string;
+  /** Momento em que o cliente consentiu com o uso dos dados (ISO 8601). */
+  consentimentoEm: string;
   /** Código legível para cliente e consultor, ex.: MG-48213 */
   codigo: string;
   criadoEm: string;
