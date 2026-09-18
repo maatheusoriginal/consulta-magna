@@ -1,0 +1,62 @@
+import type { PerfilRespostas, PlanoId, TipoVeiculo } from "../types";
+import type { PricingStatus } from "../pricing/types";
+
+/** Snapshot definitivo da cotação, montado no momento em que o lead é capturado. */
+export interface CotacaoSnapshot {
+  /** Código/id legível da simulação, ex.: MG-48213 */
+  codigo: string;
+  criadoEm: string;
+
+  // Contato
+  nome: string;
+  telefone: string;
+  email?: string;
+
+  // Veículo
+  placa?: string;
+  tipoVeiculo: TipoVeiculo;
+  marca: string;
+  modelo: string;
+  versao: string;
+  ano: number;
+  combustivel: string;
+  codigoFipe: string;
+  valorFipe: number;
+  mesReferenciaFipe: string;
+
+  // Perfil
+  tipoUso: "Particular" | "Aplicativo / Táxi";
+  respostasQuestionario: Omit<PerfilRespostas, "finalidade">;
+
+  // Cotação
+  planoRecomendado: PlanoId;
+  planoEscolhido: PlanoId;
+  mensalidade: number;
+  modalidadeParticipacao: string;
+  percentualParticipacao: number | null;
+  valorParticipacao: number;
+  adesao: number;
+
+  /** Procedência dos valores: OFFICIAL, ESTIMATED ou UNAVAILABLE. */
+  statusPrecificacao: PricingStatus;
+}
+
+export interface ResultadoPersistencia {
+  /** `true` somente quando o lead foi gravado em um destino real e durável. */
+  persistido: boolean;
+  /** Nome do repositório que atendeu a gravação. */
+  repositorio: string;
+}
+
+/**
+ * Contrato de persistência de leads.
+ *
+ * `ConsoleLeadRepository` é apenas para desenvolvimento: log de servidor NÃO é
+ * persistência de produção e ele devolve `persistido: false`.
+ */
+export interface LeadRepository {
+  readonly nome: string;
+  /** `true` apenas para destinos duráveis, aptos a produção. */
+  readonly duravel: boolean;
+  salvar(snapshot: CotacaoSnapshot): Promise<ResultadoPersistencia>;
+}

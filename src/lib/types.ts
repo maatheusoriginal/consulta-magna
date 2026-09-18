@@ -1,10 +1,29 @@
 export type TipoVeiculo = "carros" | "motos" | "caminhoes";
 
+/** Categoria de domínio usada pela precificação, independente do vocabulário da FIPE. */
+export type CategoriaVeiculo = "CAR" | "MOTORCYCLE" | "TRUCK";
+
+const CATEGORIA_POR_TIPO: Record<TipoVeiculo, CategoriaVeiculo> = {
+  carros: "CAR",
+  motos: "MOTORCYCLE",
+  caminhoes: "TRUCK",
+};
+
+export function categoriaDoTipo(tipo: TipoVeiculo): CategoriaVeiculo {
+  return CATEGORIA_POR_TIPO[tipo];
+}
+
 export interface FipeItem {
   codigo: string;
   nome: string;
 }
 
+/**
+ * Dados do veículo apurados na tabela FIPE.
+ *
+ * Este objeto descreve apenas o VEÍCULO. Ele não contém — e não deve conter —
+ * nenhum valor comercial da Magna (mensalidade, participação ou adesão).
+ */
 export interface FipeVeiculo {
   tipo: TipoVeiculo;
   marcaCodigo: string;
@@ -42,50 +61,22 @@ export interface CoberturaItem {
   nota?: string;
 }
 
+/**
+ * Catálogo de coberturas de um plano.
+ *
+ * Deliberadamente sem preço: quanto custa cada plano é responsabilidade de um
+ * `PricingProvider` (ver `src/lib/pricing`).
+ */
 export interface Plano {
   id: PlanoId;
   nome: string;
   subtitulo: string;
   descricao: string;
-  /** Percentual da tabela FIPE cobrado por mês */
-  taxaMensalFipe: number;
-  /** Mensalidade mínima aplicada quando o percentual fica abaixo do piso */
-  mensalidadeMinima: number;
   destaques: string[];
   coberturas: CoberturaItem[];
 }
 
 export type ParticipacaoId = "padrao" | "reduzida" | "minima" | "zero";
-
-export interface ModalidadeParticipacao {
-  id: ParticipacaoId;
-  nome: string;
-  badge?: string;
-  /** Percentual da FIPE. `null` para participação zero. */
-  percentual: number | null;
-  /** Multiplicador aplicado sobre a mensalidade base do plano */
-  fatorMensalidade: number;
-  descricao: string;
-  carenciaDias?: number;
-}
-
-export interface ParticipacaoCalculada extends ModalidadeParticipacao {
-  /** Valor da participação em reais (já com piso mínimo aplicado) */
-  valor: number;
-  /** `true` quando o piso mínimo contratual foi aplicado */
-  pisoAplicado: boolean;
-  mensalidade: number;
-}
-
-export interface Cotacao {
-  veiculo: FipeVeiculo;
-  perfil: PerfilRespostas;
-  plano: Plano;
-  mensalidadeBase: number;
-  participacao: ParticipacaoCalculada;
-  taxaAdesao: number;
-  codigo: string;
-}
 
 export interface Lead {
   nome: string;

@@ -2,64 +2,60 @@ import { NextResponse } from "next/server";
 
 import { erro } from "@/lib/api";
 import { isEmailValido, isWhatsAppValido } from "@/lib/format";
+import { leadRepository } from "@/lib/leads";
+import type { CotacaoSnapshot } from "@/lib/leads/types";
 
 export const dynamic = "force-dynamic";
 
-interface CorpoLead {
-  nome?: string;
-  whatsapp?: string;
-  email?: string;
-  codigo?: string;
-  resumo?: Record<string, unknown>;
+const STATUS_VALIDOS = new Set(["OFFICIAL", "ESTIMATED", "UNAVAILABLE"]);
+
+/** Valida o snapshot recebido do navegador antes de persistir. */
+function validar(corpo: Partial<CotacaoSnapshot>): string | null {
+  if (!corpo.codigo) return "Cotação sem código de simulação.";
+  if ((corpo.nome ?? "").trim().length < 2) return "Informe o nome completo.";
+  if (!isWhatsAppValido(corpo.telefone ?? "")) return "Informe um WhatsApp válido com DDD.";
+  if (corpo.email && !isEmailValido(corpo.email)) return "E-mail inválido.";
+  if (!corpo.codigoFipe || !(corpo.valorFipe && corpo.valorFipe > 0)) {
+    return "Cotação sem dados da tabela FIPE.";
+  }
+  if (!corpo.planoEscolhido) return "Cotação sem plano escolhido.";
+  if (!(corpo.mensalidade && corpo.mensalidade > 0)) return "Cotação sem mensalidade.";
+  if (!STATUS_VALIDOS.has(corpo.statusPrecificacao ?? "")) {
+    return "Cotação sem status de precificação.";
+  }
+  return null;
 }
 
 /**
- * Registra o lead antes do redirecionamento para o WhatsApp.
+ * Persiste o lead com o snapshot completo da cotação.
  *
- * Por padrão apenas registra no log do servidor. Defina `LEAD_WEBHOOK_URL`
- * (Make, Zapier, n8n, CRM próprio...) para encaminhar o lead adiante.
+ * A resposta informa se o lead foi de fato gravado em destino durável
+ * (`persistido`) — log de servidor não conta como persistência.
  */
 export async function POST(request: Request) {
-  let corpo: CorpoLead;
+  let corpo: Partial<CotacaoSnapshot>;
   try {
-    corpo = (await request.json()) as CorpoLead;
+    corpo = (await request.json()) as Partial<CotacaoSnapshot>;
   } catch {
     return erro("Corpo da requisição inválido.");
   }
 
-  const nome = corpo.nome?.trim() ?? "";
-  const whatsapp = corpo.whatsapp?.trim() ?? "";
-  const email = corpo.email?.trim() ?? "";
+  const problema = validar(corpo);
+  if (problema) return erro(problema);
 
-  if (nome.length < 2) return erro("Informe o nome completo.");
-  if (!isWhatsAppValido(whatsapp)) return erro("Informe um WhatsApp válido com DDD.");
-  if (email && !isEmailValido(email)) return erro("E-mail inválido.");
-
-  const lead = {
-    nome,
-    whatsapp: whatsapp.replace(/\D/g, ""),
-    email: email || undefined,
-    codigo: corpo.codigo,
-    resumo: corpo.resumo,
-    recebidoEm: new Date().toISOString(),
+  const repositorio = leadRepository();
+  const snapshot: CotacaoSnapshot = {
+    ...(corpo as CotacaoSnapshot),
+    telefone: (corpo.telefone ?? "").replace(/\D/g, ""),
+    // O horário de gravação é do servidor, não do navegador.
+    criadoEm: new Date().toISOString(),
   };
 
-  const webhook = process.env.LEAD_WEBHOOK_URL;
-  if (webhook) {
-    try {
-      await fetch(webhook, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(lead),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (e) {
-      // O lead nunca deve bloquear o atendimento: seguimos para o WhatsApp.
-      console.error("[lead] falha ao enviar para o webhook:", e);
-    }
-  } else {
-    console.info("[lead] recebido:", lead);
+  try {
+    const resultado = await repositorio.salvar(snapshot);
+    return NextResponse.json({ ok: true, ...resultado });
+  } catch (e) {
+    console.error("[lead] falha ao persistir:", e);
+    return erro("Não foi possível registrar seus dados agora. Tente novamente.", 502);
   }
-
-  return NextResponse.json({ ok: true });
 }

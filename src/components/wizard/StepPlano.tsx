@@ -1,20 +1,55 @@
 "use client";
 
-import { ArrowRight, Lightbulb, SlidersHorizontal, Star } from "lucide-react";
+import { ArrowRight, Lightbulb, MessageCircle, SlidersHorizontal, Star } from "lucide-react";
 
 import { ListaCoberturas } from "@/components/ListaCoberturas";
 import { Preco } from "@/components/Preco";
 import { VeiculoResumo } from "@/components/VeiculoResumo";
+import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { formatBRL } from "@/lib/format";
-import { PLANOS, calcularPrecos } from "@/lib/planos";
+import { PLANOS } from "@/lib/planos";
+import { whatsAppService } from "@/lib/whatsapp";
 import { useWizard } from "@/lib/wizard";
 
 export function StepPlano() {
-  const { veiculo, recomendado, planoSelecionado, mensalidadeBase, setPlano, irPara } = useWizard();
+  const { veiculo, recomendado, planoSelecionado, preco, precosPorPlano, setPlano, irPara } =
+    useWizard();
 
   if (!veiculo || !recomendado || !planoSelecionado) return null;
 
-  const precos = calcularPrecos(veiculo.valor);
+  // Categoria sem regra de precificação (caminhões): encaminhamos a um consultor.
+  if (!preco || preco.status === "UNAVAILABLE") {
+    const mensagem =
+      `Olá! Fiz uma consulta no site para ${veiculo.marca} ${veiculo.modelo} ${veiculo.anoModelo} ` +
+      `(FIPE ${formatBRL(veiculo.valor)}, cód. ${veiculo.codigoFipe}) e gostaria de uma cotação.`;
+
+    return (
+      <div className="animate-fade-in-up space-y-6">
+        <header>
+          <h1 className="text-[28px] font-bold leading-tight md:text-[36px]">
+            Este veículo precisa de uma análise individual
+          </h1>
+          <p className="mt-2 text-base text-text-secondary">
+            {preco?.motivo ??
+              "Ainda não há regra de precificação para esta categoria de veículo."}
+          </p>
+        </header>
+
+        <VeiculoResumo veiculo={veiculo} />
+
+        <a
+          href={whatsAppService.montarLinkComTexto(mensagem)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn-whatsapp"
+        >
+          <MessageCircle size={18} strokeWidth={2} aria-hidden />
+          Falar com um consultor
+        </a>
+      </div>
+    );
+  }
+
   const outros = PLANOS.filter((p) => p.id !== planoSelecionado.id);
   const ehRecomendado = planoSelecionado.id === recomendado.plano.id;
 
@@ -45,10 +80,11 @@ export function StepPlano() {
         )}
 
         <h2 className="mt-4 text-2xl font-bold">Plano {planoSelecionado.nome}</h2>
-        <Preco valor={mensalidadeBase} tamanho="lg" className="mt-2" />
+        <Preco valor={preco.mensalidadeBase} tamanho="lg" className="mt-2" />
         <p className="mt-2 text-xs text-text-muted">
           Valor na participação padrão (12% da FIPE). Você escolhe a participação na próxima tela.
         </p>
+        <p className="mt-1 text-xs text-text-muted">{AVISO_SIMULACAO_ESTIMADA}</p>
 
         <div className="mt-6">
           <ListaCoberturas itens={planoSelecionado.destaques} />
@@ -82,7 +118,7 @@ export function StepPlano() {
           className="btn-primary"
         >
           <span className="truncate">
-            Escolher plano {planoSelecionado.nome} · {formatBRL(mensalidadeBase)}/mês
+            Escolher plano {planoSelecionado.nome} · {formatBRL(preco.mensalidadeBase)}/mês
           </span>
           <ArrowRight size={18} strokeWidth={2} aria-hidden />
         </button>
@@ -113,7 +149,11 @@ export function StepPlano() {
                   </span>
                 </span>
                 <span className="shrink-0 text-right">
-                  <span className="block text-base font-bold">{formatBRL(precos[plano.id])}</span>
+                  <span className="block text-base font-bold">
+                    {precosPorPlano[plano.id] !== null
+                      ? formatBRL(precosPorPlano[plano.id]!)
+                      : "—"}
+                  </span>
                   <span className="block text-xs text-text-secondary">/mês</span>
                 </span>
               </button>

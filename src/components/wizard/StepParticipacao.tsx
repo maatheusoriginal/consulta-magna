@@ -6,32 +6,34 @@ import { useEffect } from "react";
 import { Aviso } from "@/components/Aviso";
 import { SelectionCard } from "@/components/SelectionCard";
 import { VeiculoResumo } from "@/components/VeiculoResumo";
+import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { formatBRL } from "@/lib/format";
-import { PARTICIPACAO_MINIMA, TAXA_ADESAO, calcularTodasParticipacoes } from "@/lib/planos";
+import { PRICING_CONFIG } from "@/lib/pricing";
 import { useWizard } from "@/lib/wizard";
 
 export function StepParticipacao() {
   const {
     veiculo,
     planoSelecionado,
-    mensalidadeBase,
+    preco,
+    participacoes,
     participacaoId,
     participacao,
     setParticipacao,
     irPara,
   } = useWizard();
 
-  const opcoes =
-    veiculo && mensalidadeBase > 0 ? calcularTodasParticipacoes(veiculo.valor, mensalidadeBase) : [];
-
-  // Uma modalidade pode ficar indisponível quando o piso mínimo iguala as faixas.
-  const primeiroId = opcoes[0]?.id;
-  const indisponivel = opcoes.length > 0 && !opcoes.some((o) => o.id === participacaoId);
+  // Uma modalidade pode ficar indisponível (piso mínimo ou restrição de uso comercial).
+  const primeiroId = participacoes[0]?.id;
+  const indisponivel =
+    participacoes.length > 0 && !participacoes.some((o) => o.id === participacaoId);
   useEffect(() => {
     if (indisponivel && primeiroId) setParticipacao(primeiroId);
   }, [indisponivel, primeiroId, setParticipacao]);
 
-  if (!veiculo || !planoSelecionado || !participacao) return null;
+  if (!veiculo || !planoSelecionado || !participacao || !preco || preco.status === "UNAVAILABLE") {
+    return null;
+  }
 
   return (
     <div className="animate-fade-in-up space-y-6 pb-28">
@@ -48,7 +50,7 @@ export function StepParticipacao() {
       <VeiculoResumo veiculo={veiculo} />
 
       <div role="radiogroup" aria-label="Modalidade de participação" className="space-y-3">
-        {opcoes.map((opcao) => {
+        {participacoes.map((opcao) => {
           const selecionado = opcao.id === participacaoId;
           const zero = opcao.percentual === null;
 
@@ -109,7 +111,7 @@ export function StepParticipacao() {
 
               <p className="mt-3 text-xs leading-relaxed text-text-secondary">
                 {opcao.pisoAplicado
-                  ? `Piso de ${formatBRL(PARTICIPACAO_MINIMA)} aplicado conforme regulamento.`
+                  ? `Piso de ${formatBRL(PRICING_CONFIG.participacaoMinima)} aplicado conforme regulamento.`
                   : opcao.descricao}
               </p>
 
@@ -127,15 +129,16 @@ export function StepParticipacao() {
       <Aviso titulo="Condições claras e transparentes">
         <p>
           <strong className="font-semibold text-text-primary">
-            Taxa de adesão: {formatBRL(TAXA_ADESAO)}.
+            Taxa de adesão: {formatBRL(preco.taxaAdesao)}.
           </strong>{" "}
           Valor único de filiação e ativação da proteção — não se confunde com a participação.
         </p>
         <p className="mt-2">
           <strong className="font-semibold text-text-primary">Participação:</strong> paga somente
           quando houver evento coberto no veículo. Piso mínimo contratual de{" "}
-          {formatBRL(PARTICIPACAO_MINIMA)}.
+          {formatBRL(PRICING_CONFIG.participacaoMinima)}.
         </p>
+        <p className="mt-2">{AVISO_SIMULACAO_ESTIMADA}</p>
       </Aviso>
 
       {/* Barra fixa com o total, conforme a tela 06 do wizard */}

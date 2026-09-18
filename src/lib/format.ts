@@ -1,10 +1,17 @@
 export function formatBRL(valor: number, comCentavos = true): string {
-  return valor.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    minimumFractionDigits: comCentavos ? 2 : 0,
-    maximumFractionDigits: comCentavos ? 2 : 0,
-  });
+  return (
+    valor
+      .toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+        minimumFractionDigits: comCentavos ? 2 : 0,
+        maximumFractionDigits: comCentavos ? 2 : 0,
+      })
+      // O Intl separa "R$" do número com espaço não-quebrável (U+00A0). Trocamos
+      // por um espaço comum para que o texto seja previsível em mensagens,
+      // comparações e no link do WhatsApp.
+      .replace(/\u00A0/g, " ")
+  );
 }
 
 /** Separa "R$ 164,27" em { simbolo: "R$", valor: "164,27" } para a hierarquia tipográfica. */

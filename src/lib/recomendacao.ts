@@ -1,6 +1,17 @@
 import { getPlano } from "./planos";
 import type { PerfilRespostas, Plano, PlanoId } from "./types";
 
+/**
+ * Respostas que determinam o plano recomendado.
+ *
+ * `finalidade` (particular ou aplicativo/táxi) é deliberadamente EXCLUÍDA deste
+ * tipo: uso comercial pode afetar a mensalidade e as modalidades de participação
+ * disponíveis (ver `src/lib/pricing`), mas nunca o plano recomendado — isso é
+ * decidido apenas pelo questionário de perfil. Ao deixar `finalidade` fora da
+ * assinatura, o compilador impede que ela volte a influenciar a recomendação.
+ */
+export type RespostasQuestionario = Omit<PerfilRespostas, "finalidade">;
+
 const ORDEM: PlanoId[] = ["bronze", "prata", "ouro", "premium"];
 
 interface Sinal {
@@ -10,7 +21,7 @@ interface Sinal {
   justificativa?: string;
 }
 
-const PRIORIDADE: Record<PerfilRespostas["prioridade"], Sinal> = {
+const PRIORIDADE: Record<RespostasQuestionario["prioridade"], Sinal> = {
   roubo: { pontos: 0, justificativa: "Sua prioridade é proteção contra roubo e furto." },
   colisao: {
     pontos: 2,
@@ -29,7 +40,7 @@ const PRIORIDADE: Record<PerfilRespostas["prioridade"], Sinal> = {
   },
 };
 
-const VIAGENS: Record<PerfilRespostas["viagens"], Sinal> = {
+const VIAGENS: Record<RespostasQuestionario["viagens"], Sinal> = {
   "quase-nunca": { pontos: 0 },
   "as-vezes": { pontos: 1 },
   frequencia: {
@@ -39,7 +50,7 @@ const VIAGENS: Record<PerfilRespostas["viagens"], Sinal> = {
   },
 };
 
-const CARRO_RESERVA: Record<PerfilRespostas["carroReserva"], Sinal> = {
+const CARRO_RESERVA: Record<RespostasQuestionario["carroReserva"], Sinal> = {
   "nao-preciso": { pontos: 0 },
   interessante: { pontos: 1 },
   "muito-importante": {
@@ -49,7 +60,7 @@ const CARRO_RESERVA: Record<PerfilRespostas["carroReserva"], Sinal> = {
   },
 };
 
-const TERCEIROS: Record<PerfilRespostas["terceiros"], Sinal> = {
+const TERCEIROS: Record<RespostasQuestionario["terceiros"], Sinal> = {
   "nao-prioridade": { pontos: 0 },
   intermediaria: { pontos: 1, minimo: "prata" },
   alta: {
@@ -59,7 +70,7 @@ const TERCEIROS: Record<PerfilRespostas["terceiros"], Sinal> = {
   },
 };
 
-const VIDROS: Record<PerfilRespostas["vidros"], Sinal> = {
+const VIDROS: Record<RespostasQuestionario["vidros"], Sinal> = {
   nao: { pontos: 0 },
   "um-pouco": { pontos: 1 },
   sim: {
@@ -69,38 +80,28 @@ const VIDROS: Record<PerfilRespostas["vidros"], Sinal> = {
   },
 };
 
-const FINALIDADE: Record<PerfilRespostas["finalidade"], Sinal> = {
-  particular: { pontos: 0 },
-  aplicativo: {
-    pontos: 2,
-    minimo: "prata",
-    justificativa: "Como o veículo roda em aplicativo, a exposição diária é maior.",
-  },
-};
-
 export interface Recomendacao {
   plano: Plano;
   justificativas: string[];
   pontuacao: number;
 }
 
-export function recomendarPlano(perfil: PerfilRespostas): Recomendacao {
+export function recomendarPlano(respostas: RespostasQuestionario): Recomendacao {
   const sinais: Sinal[] = [
-    FINALIDADE[perfil.finalidade],
-    PRIORIDADE[perfil.prioridade],
-    VIAGENS[perfil.viagens],
-    CARRO_RESERVA[perfil.carroReserva],
-    TERCEIROS[perfil.terceiros],
-    VIDROS[perfil.vidros],
+    PRIORIDADE[respostas.prioridade],
+    VIAGENS[respostas.viagens],
+    CARRO_RESERVA[respostas.carroReserva],
+    TERCEIROS[respostas.terceiros],
+    VIDROS[respostas.vidros],
   ];
 
   const pontuacao = sinais.reduce((total, sinal) => total + sinal.pontos, 0);
 
-  // Faixa de pontuação (0 a 13) → plano sugerido.
+  // Faixa de pontuação (0 a 11) → plano sugerido.
   let indice: number;
   if (pontuacao <= 2) indice = 0;
   else if (pontuacao <= 5) indice = 1;
-  else if (pontuacao <= 9) indice = 2;
+  else if (pontuacao <= 8) indice = 2;
   else indice = 3;
 
   // Respostas com exigência explícita elevam o piso da recomendação.
@@ -117,7 +118,11 @@ export function recomendarPlano(perfil: PerfilRespostas): Recomendacao {
   const plano = getPlano(ORDEM[indice]);
   while (justificativas.length < 3) {
     const extra = plano.destaques[justificativas.length];
-    justificativas.push(extra ? `Inclui ${extra.toLowerCase()}.` : "Melhor equilíbrio entre cobertura e mensalidade para o seu perfil.");
+    justificativas.push(
+      extra
+        ? `Inclui ${extra.toLowerCase()}.`
+        : "Melhor equilíbrio entre cobertura e mensalidade para o seu perfil.",
+    );
   }
 
   return { plano, justificativas, pontuacao };

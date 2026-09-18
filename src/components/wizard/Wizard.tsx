@@ -17,7 +17,7 @@ import { StepWhatsApp } from "./StepWhatsApp";
 
 export function Wizard() {
   const parametros = useSearchParams();
-  const { tela, veiculo, perfil, hidratado, irPara } = useWizard();
+  const { tela, veiculo, perfilCompleto, snapshot, hidratado, irPara } = useWizard();
 
   const placaInicial = normalizePlaca(parametros.get("placa") ?? "");
   const modoInicial = parametros.get("modo") === "manual" ? "manual" : "placa";
@@ -26,9 +26,16 @@ export function Wizard() {
   useEffect(() => {
     if (!hidratado) return;
     if (tela !== "veiculo" && !veiculo) irPara("veiculo");
-    else if (["plano", "comparar", "participacao", "resumo", "whatsapp"].includes(tela) && !perfil.vidros)
+    else if (
+      ["plano", "comparar", "participacao", "resumo", "whatsapp"].includes(tela) &&
+      !perfilCompleto
+    ) {
       irPara("perfil");
-  }, [hidratado, tela, veiculo, perfil.vidros, irPara]);
+    } else if (tela === "whatsapp" && !snapshot) {
+      // A tela final só existe depois que o lead foi capturado e persistido.
+      irPara("resumo");
+    }
+  }, [hidratado, tela, veiculo, perfilCompleto, snapshot, irPara]);
 
   const etapaAtual = TELAS.find((t) => t.id === tela)?.etapa ?? 0;
   const largura = tela === "comparar" ? "max-w-compare" : "max-w-wizard";

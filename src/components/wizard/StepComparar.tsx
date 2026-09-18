@@ -5,8 +5,9 @@ import { useState } from "react";
 
 import { Preco } from "@/components/Preco";
 import { VeiculoResumo } from "@/components/VeiculoResumo";
+import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { formatBRL } from "@/lib/format";
-import { ITENS_COMPARACAO, PLANOS, calcularPrecos } from "@/lib/planos";
+import { ITENS_COMPARACAO, PLANOS } from "@/lib/planos";
 import type { CoberturaItem, PlanoId } from "@/lib/types";
 import { useWizard } from "@/lib/wizard";
 
@@ -38,12 +39,11 @@ function ValorCobertura({ item }: { item: CoberturaItem | undefined }) {
 }
 
 export function StepComparar() {
-  const { veiculo, recomendado, planoSelecionado, setPlano, irPara } = useWizard();
+  const { veiculo, recomendado, planoSelecionado, precosPorPlano, setPlano, irPara } = useWizard();
   const [aba, setAba] = useState<PlanoId>(planoSelecionado?.id ?? "ouro");
 
   if (!veiculo || !planoSelecionado) return null;
 
-  const precos = calcularPrecos(veiculo.valor);
   const idRecomendado = recomendado?.plano.id;
   const planoAba = PLANOS.find((p) => p.id === aba)!;
 
@@ -59,7 +59,7 @@ export function StepComparar() {
           Compare e escolha o seu plano
         </h1>
         <p className="mt-2 text-base text-text-secondary">
-          Transparência total em cada item coberto.
+          Transparência total em cada item coberto. {AVISO_SIMULACAO_ESTIMADA}
         </p>
       </header>
 
@@ -109,7 +109,9 @@ export function StepComparar() {
           <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
             {planoAba.subtitulo}
           </p>
-          <Preco valor={precos[planoAba.id]} tamanho="md" className="mt-3" />
+          {precosPorPlano[planoAba.id] !== null ? (
+            <Preco valor={precosPorPlano[planoAba.id]!} tamanho="md" className="mt-3" />
+          ) : null}
           <p className="mt-3 text-sm leading-relaxed text-text-secondary">{planoAba.descricao}</p>
 
           <dl className="mt-5 divide-y divide-border-subtle border-y border-border-subtle">
@@ -163,7 +165,9 @@ export function StepComparar() {
                       </span>
                     ) : null}
                     <span className="mt-2 block text-xl font-extrabold tracking-[-0.02em]">
-                      {formatBRL(precos[plano.id])}
+                      {precosPorPlano[plano.id] !== null
+                        ? formatBRL(precosPorPlano[plano.id]!)
+                        : "—"}
                       <span className="ml-1 text-xs font-medium text-text-secondary">/mês</span>
                     </span>
                   </th>

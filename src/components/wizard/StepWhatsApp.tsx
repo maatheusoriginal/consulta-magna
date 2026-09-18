@@ -2,10 +2,9 @@
 
 import { Check, MessageCircle, RotateCcw, ShieldCheck } from "lucide-react";
 
-import { linkWhatsApp } from "@/lib/config";
+import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { formatBRL } from "@/lib/format";
-import { montarMensagemWhatsApp } from "@/lib/mensagem";
-import { TAXA_ADESAO } from "@/lib/planos";
+import { whatsAppService } from "@/lib/whatsapp";
 import { useWizard } from "@/lib/wizard";
 
 const PASSOS = [
@@ -24,18 +23,12 @@ const PASSOS = [
 ];
 
 export function StepWhatsApp() {
-  const { veiculo, planoSelecionado, participacao, codigo, lead, reiniciar, irPara } = useWizard();
+  const { snapshot, planoSelecionado, reiniciar, irPara } = useWizard();
 
-  if (!veiculo || !planoSelecionado || !participacao || !codigo) return null;
+  if (!snapshot || !planoSelecionado) return null;
 
-  const mensagem = montarMensagemWhatsApp({
-    codigo,
-    veiculo,
-    plano: planoSelecionado,
-    participacao,
-    taxaAdesao: TAXA_ADESAO,
-    lead,
-  });
+  // Link montado a partir do snapshot definitivo — nada fixo no código.
+  const linkWhatsApp = whatsAppService.montarLink(snapshot);
 
   return (
     <div className="animate-fade-in-up space-y-6">
@@ -47,7 +40,7 @@ export function StepWhatsApp() {
           Sua simulação está pronta
         </h1>
         <p className="mt-2 text-base text-text-secondary">
-          Continue o atendimento pelo WhatsApp{lead?.nome ? `, ${lead.nome.split(" ")[0]}` : ""}.
+          Continue o atendimento pelo WhatsApp, {snapshot.nome.split(" ")[0]}.
         </p>
       </header>
 
@@ -55,17 +48,21 @@ export function StepWhatsApp() {
         <dl className="space-y-3 text-sm">
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-text-secondary">Código da simulação</dt>
-            <dd className="font-semibold">#{codigo}</dd>
+            <dd className="font-semibold">#{snapshot.codigo}</dd>
           </div>
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-text-secondary">Veículo</dt>
             <dd className="text-right font-semibold">
-              {veiculo.marca} {veiculo.modelo.split(" ")[0]} {veiculo.anoModelo}
+              {snapshot.marca} {snapshot.modelo.split(" ")[0]} {snapshot.ano}
             </dd>
           </div>
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-text-secondary">Valor FIPE</dt>
-            <dd className="font-semibold">{formatBRL(veiculo.valor)}</dd>
+            <dd className="font-semibold">{formatBRL(snapshot.valorFipe)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-text-secondary">Uso</dt>
+            <dd className="font-semibold">{snapshot.tipoUso}</dd>
           </div>
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-text-secondary">Plano</dt>
@@ -74,12 +71,14 @@ export function StepWhatsApp() {
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-text-secondary">Participação</dt>
             <dd className="text-right font-semibold">
-              {participacao.percentual === null ? "R$ 0 no 1º evento" : formatBRL(participacao.valor)}
+              {snapshot.percentualParticipacao === null
+                ? "R$ 0 no 1º evento"
+                : formatBRL(snapshot.valorParticipacao)}
             </dd>
           </div>
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-text-secondary">Taxa de adesão</dt>
-            <dd className="font-semibold">{formatBRL(TAXA_ADESAO)}</dd>
+            <dd className="font-semibold">{formatBRL(snapshot.adesao)}</dd>
           </div>
         </dl>
 
@@ -87,19 +86,18 @@ export function StepWhatsApp() {
           <p className="text-sm font-semibold">Mensalidade</p>
           <p className="flex items-baseline gap-1">
             <span className="text-3xl font-extrabold tracking-[-0.03em]">
-              {formatBRL(participacao.mensalidade)}
+              {formatBRL(snapshot.mensalidade)}
             </span>
             <span className="text-sm text-text-secondary">/mês</span>
           </p>
         </div>
+
+        {snapshot.statusPrecificacao === "ESTIMATED" ? (
+          <p className="mt-3 text-xs text-text-muted">{AVISO_SIMULACAO_ESTIMADA}</p>
+        ) : null}
       </article>
 
-      <a
-        href={linkWhatsApp(mensagem)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="btn-whatsapp"
-      >
+      <a href={linkWhatsApp} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
         <MessageCircle size={18} strokeWidth={2} aria-hidden />
         Abrir conversa no WhatsApp
       </a>

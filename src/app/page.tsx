@@ -14,8 +14,10 @@ import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { PlacaHeroForm } from "@/components/PlacaHeroForm";
 import { Preco } from "@/components/Preco";
+import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
 import { formatBRL } from "@/lib/format";
-import { PLANOS, TAXA_ADESAO, calcularPrecos } from "@/lib/planos";
+import { PLANOS } from "@/lib/planos";
+import { PRICING_CONFIG, pricingProvider } from "@/lib/pricing";
 
 const BENEFICIOS = [
   {
@@ -57,7 +59,7 @@ const PASSOS = [
 const DUVIDAS = [
   {
     pergunta: "Qual a diferença entre adesão e participação?",
-    resposta: `A adesão é um valor único de filiação e ativação da proteção, a partir de ${formatBRL(TAXA_ADESAO)}. A participação é o valor pago apenas quando há um evento coberto, com piso mínimo contratual de ${formatBRL(1800)}.`,
+    resposta: `A adesão é um valor único de filiação e ativação da proteção, a partir de ${formatBRL(PRICING_CONFIG.taxaAdesao)}. A participação é o valor pago apenas quando há um evento coberto, com piso mínimo contratual de ${formatBRL(PRICING_CONFIG.participacaoMinima)}.`,
   },
   {
     pergunta: "De onde vem o valor FIPE mostrado na cotação?",
@@ -79,9 +81,26 @@ const DUVIDAS = [
 /** Valor de referência só para ilustrar os preços na vitrine da home. */
 const FIPE_EXEMPLO = 28436;
 
+/** Mensalidade de vitrine de cada plano, vinda do PricingProvider (status ESTIMATED). */
+function precosDeVitrine(): Record<string, number | null> {
+  return Object.fromEntries(
+    PLANOS.map((plano) => {
+      const resultado = pricingProvider.precificar({
+        categoria: "CAR",
+        valorFipe: FIPE_EXEMPLO,
+        planoId: plano.id,
+        usoComercial: false,
+      });
+      return [plano.id, resultado.status === "UNAVAILABLE" ? null : resultado.mensalidadeBase];
+    }),
+  );
+}
+
 export default function Home() {
-  const precos = calcularPrecos(FIPE_EXEMPLO);
+  const precos = precosDeVitrine();
   const ouro = PLANOS.find((p) => p.id === "ouro")!;
+  const taxaAdesao = PRICING_CONFIG.taxaAdesao;
+  const participacaoMinima = PRICING_CONFIG.participacaoMinima;
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -160,7 +179,7 @@ export default function Home() {
                   Recomendado para você
                 </span>
                 <p className="mt-3 text-lg font-bold">Plano {ouro.nome}</p>
-                <Preco valor={precos.ouro} tamanho="md" className="mt-1" />
+                {precos.ouro !== null ? <Preco valor={precos.ouro} tamanho="md" className="mt-1" /> : null}
                 <ul className="mt-4 space-y-2">
                   {ouro.destaques.slice(0, 3).map((item) => (
                     <li key={item} className="flex gap-2 text-xs text-text-secondary">
@@ -201,7 +220,7 @@ export default function Home() {
           <h2 className="text-[28px] font-bold leading-tight md:text-[40px]">Planos e coberturas</h2>
           <p className="mt-3 max-w-2xl text-base text-text-secondary">
             Valores de exemplo para um veículo com FIPE de {formatBRL(FIPE_EXEMPLO)}. Na cotação, a
-            mensalidade é calculada sobre a FIPE real do seu veículo.
+            mensalidade é calculada sobre a FIPE real do seu veículo. {AVISO_SIMULACAO_ESTIMADA}
           </p>
 
           <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
@@ -225,7 +244,9 @@ export default function Home() {
                   <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
                     {plano.subtitulo}
                   </p>
-                  <Preco valor={precos[plano.id]} tamanho="sm" className="mt-4" />
+                  {precos[plano.id] !== null ? (
+                    <Preco valor={precos[plano.id]!} tamanho="sm" className="mt-4" />
+                  ) : null}
                   <p className="mt-3 text-sm leading-relaxed text-text-secondary">
                     {plano.descricao}
                   </p>
@@ -249,8 +270,9 @@ export default function Home() {
 
           <div className="mt-8">
             <Aviso titulo="Adesão e participação são coisas diferentes">
-              A taxa de adesão é única, a partir de {formatBRL(TAXA_ADESAO)}. A participação só é
-              paga quando houver um evento coberto e tem piso mínimo de {formatBRL(1800)}.
+              A taxa de adesão é única, a partir de {formatBRL(taxaAdesao)}. A participação só é
+              paga quando houver um evento coberto e tem piso mínimo de{" "}
+              {formatBRL(participacaoMinima)}.
             </Aviso>
           </div>
 

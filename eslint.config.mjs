@@ -7,6 +7,15 @@ const compat = new FlatCompat({ baseDirectory: dirname(fileURLToPath(import.meta
 const config = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   { ignores: [".next/**", "node_modules/**", "next-env.d.ts"] },
+  {
+    // Parâmetros prefixados com _ existem só para tipar mocks nos testes.
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ];
 
 export default config;

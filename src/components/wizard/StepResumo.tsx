@@ -5,12 +5,24 @@ import { useState } from "react";
 
 import { ListaCoberturas } from "@/components/ListaCoberturas";
 import { postJson } from "@/lib/client-api";
+import { AVISO_SIMULACAO_ESTIMADA } from "@/lib/config";
+import { montarSnapshot } from "@/lib/cotacao";
 import { formatBRL, formatWhatsApp, isEmailValido, isWhatsAppValido } from "@/lib/format";
-import { TAXA_ADESAO } from "@/lib/planos";
+import type { CotacaoSnapshot } from "@/lib/leads/types";
 import { useWizard } from "@/lib/wizard";
 
 export function StepResumo() {
-  const { veiculo, planoSelecionado, participacao, setLead, irPara } = useWizard();
+  const {
+    veiculo,
+    perfilCompleto,
+    recomendado,
+    planoSelecionado,
+    preco,
+    participacao,
+    concluir,
+    gerarCodigo,
+    irPara,
+  } = useWizard();
 
   const [nome, setNome] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -19,12 +31,23 @@ export function StepResumo() {
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
 
-  if (!veiculo || !planoSelecionado || !participacao) return null;
+  if (
+    !veiculo ||
+    !planoSelecionado ||
+    !participacao ||
+    !recomendado ||
+    !preco ||
+    preco.status === "UNAVAILABLE" ||
+    !perfilCompleto
+  ) {
+    return null;
+  }
 
   async function enviar(evento: React.FormEvent) {
     evento.preventDefault();
     setErroEnvio(null);
 
+    // 1 e 2 — validação de nome e telefone antes de qualquer outra coisa.
     const novosErros: Record<string, string> = {};
     if (nome.trim().length < 2) novosErros.nome = "Informe seu nome completo.";
     if (!isWhatsAppValido(whatsapp)) novosErros.whatsapp = "Informe um WhatsApp válido com DDD.";
@@ -33,28 +56,38 @@ export function StepResumo() {
     setErros(novosErros);
     if (Object.keys(novosErros).length > 0) return;
 
-    const dados = { nome: nome.trim(), whatsapp, email: email.trim() || undefined };
-    setEnviando(true);
+    const lead = { nome: nome.trim(), whatsapp, email: email.trim() || undefined };
 
+    // 3 — snapshot definitivo da cotação que o usuário acabou de fazer.
+    const snapshot: CotacaoSnapshot = montarSnapshot({
+      codigo: gerarCodigo(),
+      veiculo: veiculo!,
+      perfil: perfilCompleto!,
+      planoRecomendado: recomendado!.plano.id,
+      planoEscolhido: planoSelecionado!.id,
+      participacao: participacao!,
+      taxaAdesao: preco!.status === "UNAVAILABLE" ? 0 : preco!.taxaAdesao,
+      statusPrecificacao: preco!.status,
+      lead,
+    });
+
+    setEnviando(true);
     try {
-      await postJson("/api/lead", {
-        ...dados,
-        resumo: {
-          veiculo: `${veiculo!.marca} ${veiculo!.modelo} ${veiculo!.anoModelo}`,
-          fipe: veiculo!.valor,
-          plano: planoSelecionado!.nome,
-          mensalidade: participacao!.mensalidade,
-          participacao: participacao!.valor,
-        },
-      });
+      // 4 — persistir o lead. Só avançamos depois que ele foi aceito.
+      await postJson("/api/lead", snapshot);
     } catch (e) {
-      // O lead é registro interno: uma falha aqui não pode travar o atendimento.
-      console.error(e);
+      setErroEnvio(
+        e instanceof Error
+          ? e.message
+          : "Não foi possível registrar seus dados agora. Tente novamente.",
+      );
+      return;
     } finally {
       setEnviando(false);
     }
 
-    setLead(dados);
+    // 5 — só agora o WhatsApp fica disponível, montado a partir do snapshot.
+    concluir(lead, snapshot);
     irPara("whatsapp");
   }
 
@@ -85,6 +118,7 @@ export function StepResumo() {
           </p>
           <p className="mt-0.5 text-xs text-text-secondary">
             FIPE {formatBRL(veiculo.valor)} · cód. {veiculo.codigoFipe}
+            {veiculo.mesReferencia ? ` · ref. ${veiculo.mesReferencia}` : ""}
           </p>
         </div>
 
@@ -103,6 +137,7 @@ export function StepResumo() {
               </span>
               <span className="text-sm font-medium text-text-secondary">/mês</span>
             </p>
+            <p className="mt-2 text-xs text-text-secondary">{AVISO_SIMULACAO_ESTIMADA}</p>
           </div>
 
           <dl className="grid gap-4 sm:grid-cols-2">
@@ -122,10 +157,8 @@ export function StepResumo() {
 
             <div className="rounded-card border border-border-subtle p-4">
               <dt className="text-xs font-medium text-text-secondary">Taxa de adesão</dt>
-              <dd className="mt-1 text-lg font-bold">{formatBRL(TAXA_ADESAO)}</dd>
-              <dd className="mt-1 text-xs text-text-muted">
-                Valor único de ativação do plano
-              </dd>
+              <dd className="mt-1 text-lg font-bold">{formatBRL(preco.taxaAdesao)}</dd>
+              <dd className="mt-1 text-xs text-text-muted">Valor único de ativação do plano</dd>
             </div>
           </dl>
 

@@ -10,14 +10,24 @@ import {
   type ReactNode,
 } from "react";
 
-import { calcularMensalidadeBase, calcularParticipacao, getModalidade, getPlano } from "./planos";
-import { recomendarPlano } from "./recomendacao";
+import { gerarCodigoSimulacao } from "./cotacao";
+import type { CotacaoSnapshot } from "./leads/types";
+import { getPlano, PLANOS } from "./planos";
+import { pricingProvider } from "./pricing";
 import type {
-  FipeVeiculo,
-  Lead,
-  ParticipacaoId,
-  PerfilRespostas,
-  PlanoId,
+  ParticipacaoPrecificada,
+  PrecoDisponivel,
+  ResultadoPrecificacao,
+} from "./pricing/types";
+import { recomendarPlano, type Recomendacao } from "./recomendacao";
+import {
+  categoriaDoTipo,
+  type FipeVeiculo,
+  type Lead,
+  type ParticipacaoId,
+  type PerfilRespostas,
+  type Plano,
+  type PlanoId,
 } from "./types";
 
 export const ETAPAS = ["Veículo", "Perfil", "Plano", "Cotação"] as const;
@@ -42,7 +52,7 @@ interface EstadoWizard {
   planoId: PlanoId | null;
   participacaoId: ParticipacaoId;
   lead: Lead | null;
-  codigo: string | null;
+  snapshot: CotacaoSnapshot | null;
 }
 
 const ESTADO_INICIAL: EstadoWizard = {
@@ -52,14 +62,10 @@ const ESTADO_INICIAL: EstadoWizard = {
   planoId: null,
   participacaoId: "padrao",
   lead: null,
-  codigo: null,
+  snapshot: null,
 };
 
 const CHAVE_STORAGE = "magna:cotacao";
-
-function gerarCodigo(): string {
-  return `MG-${Math.floor(10_000 + Math.random() * 89_999)}`;
-}
 
 function perfilCompleto(perfil: Partial<PerfilRespostas>): perfil is PerfilRespostas {
   return (
@@ -72,21 +78,32 @@ function perfilCompleto(perfil: Partial<PerfilRespostas>): perfil is PerfilRespo
   );
 }
 
+function precoDisponivel(preco: ResultadoPrecificacao | null): preco is PrecoDisponivel {
+  return preco !== null && preco.status !== "UNAVAILABLE";
+}
+
 interface ContextoWizard extends EstadoWizard {
   hidratado: boolean;
+  /** Perfil já validado, ou `null` enquanto o questionário estiver incompleto. */
+  perfilCompleto: PerfilRespostas | null;
   /** Plano sugerido pelo questionário (independe da escolha do usuário). */
-  recomendado: ReturnType<typeof recomendarPlano> | null;
+  recomendado: Recomendacao | null;
   /** Plano efetivamente escolhido — cai para o recomendado enquanto não houver escolha. */
-  planoSelecionado: ReturnType<typeof getPlano> | null;
-  mensalidadeBase: number;
-  participacao: ReturnType<typeof calcularParticipacao> | null;
+  planoSelecionado: Plano | null;
+  /** Resultado do PricingProvider para o plano selecionado. */
+  preco: ResultadoPrecificacao | null;
+  /** Mensalidade por plano, para a tela de comparação. `null` quando indisponível. */
+  precosPorPlano: Record<PlanoId, number | null>;
+  participacao: ParticipacaoPrecificada | null;
+  participacoes: ParticipacaoPrecificada[];
   irPara: (tela: TelaId) => void;
   voltar: () => void;
   setVeiculo: (veiculo: FipeVeiculo | null) => void;
   setPerfil: (parcial: Partial<PerfilRespostas>) => void;
   setPlano: (id: PlanoId) => void;
   setParticipacao: (id: ParticipacaoId) => void;
-  setLead: (lead: Lead) => void;
+  concluir: (lead: Lead, snapshot: CotacaoSnapshot) => void;
+  gerarCodigo: () => string;
   reiniciar: () => void;
 }
 
@@ -124,9 +141,10 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const voltar = useCallback(() => {
     setEstado((atual) => {
       const indice = TELAS.findIndex((t) => t.id === atual.tela);
-      // "Comparar" é uma ramificação da tela de plano: voltar retorna para ela.
-      if (atual.tela === "comparar") return { ...atual, tela: "plano" };
-      if (atual.tela === "participacao") return { ...atual, tela: "plano" };
+      // "Comparar" e "Participação" são ramificações da tela de plano.
+      if (atual.tela === "comparar" || atual.tela === "participacao") {
+        return { ...atual, tela: "plano" };
+      }
       return { ...atual, tela: TELAS[Math.max(0, indice - 1)].id };
     });
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
@@ -148,9 +166,11 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setEstado((atual) => ({ ...atual, participacaoId }));
   }, []);
 
-  const setLead = useCallback((lead: Lead) => {
-    setEstado((atual) => ({ ...atual, lead, codigo: atual.codigo ?? gerarCodigo() }));
+  const concluir = useCallback((lead: Lead, snapshot: CotacaoSnapshot) => {
+    setEstado((atual) => ({ ...atual, lead, snapshot }));
   }, []);
+
+  const gerarCodigo = useCallback(() => gerarCodigoSimulacao(), []);
 
   const reiniciar = useCallback(() => {
     setEstado(ESTADO_INICIAL);
@@ -162,33 +182,71 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const valor = useMemo<ContextoWizard>(() => {
-    const recomendado = perfilCompleto(estado.perfil) ? recomendarPlano(estado.perfil) : null;
+    const perfil = estado.perfil;
+    const completo = perfilCompleto(perfil);
+
+    // O plano recomendado sai apenas do questionário: a finalidade (particular
+    // ou aplicativo/táxi) não entra nesta decisão.
+    const recomendado = completo
+      ? recomendarPlano({
+          prioridade: perfil.prioridade,
+          viagens: perfil.viagens,
+          carroReserva: perfil.carroReserva,
+          terceiros: perfil.terceiros,
+          vidros: perfil.vidros,
+        })
+      : null;
+
     const planoSelecionado = estado.planoId
       ? getPlano(estado.planoId)
       : (recomendado?.plano ?? null);
 
-    const valorFipe = estado.veiculo?.valor ?? 0;
-    const mensalidadeBase =
-      planoSelecionado && valorFipe > 0 ? calcularMensalidadeBase(planoSelecionado, valorFipe) : 0;
-    const participacao =
-      mensalidadeBase > 0
-        ? calcularParticipacao(getModalidade(estado.participacaoId), valorFipe, mensalidadeBase)
+    const veiculo = estado.veiculo;
+    const usoComercial = perfil.finalidade === "aplicativo";
+
+    const precificar = (planoId: PlanoId): ResultadoPrecificacao | null =>
+      veiculo
+        ? pricingProvider.precificar({
+            categoria: categoriaDoTipo(veiculo.tipo),
+            valorFipe: veiculo.valor,
+            planoId,
+            usoComercial,
+          })
         : null;
+
+    const preco = planoSelecionado ? precificar(planoSelecionado.id) : null;
+
+    const precosPorPlano = PLANOS.reduce(
+      (acc, plano) => {
+        const resultado = precificar(plano.id);
+        acc[plano.id] = precoDisponivel(resultado) ? resultado.mensalidadeBase : null;
+        return acc;
+      },
+      {} as Record<PlanoId, number | null>,
+    );
+
+    const participacoes = precoDisponivel(preco) ? preco.participacoes : [];
+    const participacao =
+      participacoes.find((p) => p.id === estado.participacaoId) ?? participacoes[0] ?? null;
 
     return {
       ...estado,
       hidratado,
+      perfilCompleto: completo ? perfil : null,
       recomendado,
       planoSelecionado,
-      mensalidadeBase,
+      preco,
+      precosPorPlano,
       participacao,
+      participacoes,
       irPara,
       voltar,
       setVeiculo,
       setPerfil,
       setPlano,
       setParticipacao,
-      setLead,
+      concluir,
+      gerarCodigo,
       reiniciar,
     };
   }, [
@@ -200,7 +258,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setPerfil,
     setPlano,
     setParticipacao,
-    setLead,
+    concluir,
+    gerarCodigo,
     reiniciar,
   ]);
 
