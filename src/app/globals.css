@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-bg-primary text-text-primary antialiased;
+  }
+
+  /* Tipografia do DESIGN.md: títulos com tracking levemente negativo */
+  h1,
+  h2,
+  h3 {
+    @apply tracking-[-0.02em];
+  }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-primary/40 ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex h-14 w-full items-center justify-center gap-2 rounded-btn bg-primary px-6
+      text-base font-semibold text-white transition-colors duration-200
+      hover:bg-primary-hover active:bg-primary-hover
+      disabled:cursor-not-allowed disabled:bg-primary/40;
+  }
+
+  .btn-secondary {
+    @apply inline-flex h-14 w-full items-center justify-center gap-2 rounded-btn border
+      border-border-subtle bg-white px-6 text-base font-semibold text-text-primary
+      transition-colors duration-200 hover:bg-bg-secondary;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-btn px-2 py-2 text-sm
+      font-semibold text-primary transition-colors duration-200 hover:text-primary-hover;
+  }
+
+  .btn-whatsapp {
+    @apply inline-flex h-14 w-full items-center justify-center gap-2 rounded-btn bg-whatsapp px-6
+      text-base font-semibold text-white transition-colors duration-200 hover:bg-whatsapp-hover
+      disabled:cursor-not-allowed disabled:bg-whatsapp/50;
+  }
+
+  .card {
+    @apply rounded-card border border-border-subtle bg-white shadow-card;
+  }
+
+  .field-label {
+    @apply mb-2 block text-sm font-semibold text-text-primary;
+  }
+
+  .field-input {
+    @apply h-14 w-full rounded-input border border-border-input bg-white px-4 text-base
+      text-text-primary transition-colors duration-200 placeholder:text-text-muted
+      focus:border-primary focus:outline-none focus:ring-0;
+  }
+
+  .aviso {
+    @apply flex gap-3 rounded-card border border-warn-border bg-warn-bg p-4 text-sm text-text-primary;
+  }
+}
